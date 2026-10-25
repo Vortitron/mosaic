@@ -1,0 +1,72 @@
+# Mosaic
+
+A live-tile Start screen for Home Assistant, after Windows Phone 10.
+
+- **Live tiles:** small, medium, wide and large tiles in one accent colour. They flip or peek between faces: a room turns over to its temperature or what's playing, the date to your next event, a camera tile shows its picture.
+- **Rooms are apps:** tap a room tile for a full-screen room with pivots (lights, power, climate, media, security...) that you swipe between. Tapping a name opens Home Assistant's own dialog.
+- **The A–Z list:** swipe left (on a desktop it sits beside the tiles) for everything in the house, with search and a letter jump list.
+- **An assistant where Cortana was:** a tile and the search box talk to your home's Assist agent. If that agent is Claude (the Anthropic integration), the tile says Claude.
+- **No setup:** with no config, Mosaic lays your home out from its floors and areas.
+
+## Install
+
+HACS (custom repository, type *Dashboard*), or copy `dist/mosaic.js` to `/config/www/mosaic/` and add `/local/mosaic/mosaic.js` as a JavaScript module resource.
+
+Then do either of these:
+
+- **Whole dashboard:** create a new dashboard, open its raw configuration editor and use
+
+  ```yaml
+  strategy:
+    type: custom:mosaic
+    accent: cobalt
+  ```
+
+- **One card:** add a `custom:mosaic-start` card to a panel view.
+
+## Options
+
+```yaml
+type: custom:mosaic-start
+accent: cobalt          # lime green emerald teal cyan cobalt indigo violet pink magenta
+                        # crimson red orange amber yellow brown olive steel mauve taupe, or '#rrggbb'
+theme: auto             # dark | light | auto (follows Home Assistant)
+columns: 6              # small-tile columns on a phone: 6 (three medium tiles across) or 8
+light_colours: false    # true: a lit lamp's tile takes the lamp's colour
+assistant:              # false hides the assistant
+  agent_id: conversation.claude   # default: your preferred Assist pipeline's agent
+  name: Claude
+groups:                 # leave out to have Mosaic lay the home out itself
+  - name: downstairs
+    tiles:
+      - area: kitchen     # a room tile; tap opens the room
+        size: wide        # small | medium | wide | large
+      - entity: light.sofa
+      - entity: camera.garden
+        size: wide
+      - type: clock       # clock | assistant | media (whatever is playing)
+```
+
+Tap a tile to toggle it, or to open its room. Hold a tile to open Home Assistant's dialog for it. Locks, alarms and climate never act on a tap; they open the dialog instead. A switch that looks like it runs the house (servers, a fridge, a boiler, an EV charger and the like) asks before it switches.
+
+## Privacy
+
+Mosaic makes no requests outside your Home Assistant. Its typeface (Selawik) is bundled inside the card, and the assistant goes through Home Assistant's Assist, so the only AI that hears you is the one you set up there.
+
+## Credits
+
+- Typeface: [Selawik](https://github.com/microsoft/Selawik), © Microsoft, SIL Open Font License 1.1 (`fonts/OFL.txt`). It is Segoe UI's open-source stand-in; where Segoe UI is installed, it is used instead.
+- Prior art: [Metrology](https://github.com/Madelena/Metrology-for-Hass) by Madelena, the Metro theme for Home Assistant.
+
+Mosaic is not affiliated with Microsoft. Windows Phone and Cortana are Microsoft trademarks.
+
+## Developing
+
+```sh
+npm install
+npm run build        # dist/mosaic.js
+npm test             # the model, in node
+python3 -m http.server 18766   # then open /tools/harness/ (fake home; ?theme=light&accent=lime&cols=8)
+```
+
+`tools/hatest.cjs` drives a real Home Assistant (login, room toggle, Assist) with Playwright.

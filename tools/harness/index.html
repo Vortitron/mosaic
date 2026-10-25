@@ -1,0 +1,35 @@
+<!doctype html>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mosaic harness</title>
+<style>body { margin: 0; background: #111; } .hdr { height: 56px; background: #03a9f4; } </style>
+<div class="hdr"></div>
+<mosaic-start></mosaic-start>
+<script type="module">
+// Stand-ins for Home Assistant's icon elements: a letter in a circle is enough to see layout.
+for (const tag of ['ha-icon', 'ha-state-icon']) customElements.define(tag, class extends HTMLElement {
+  connectedCallback() { this.paint(); }
+  set stateObj(s) { this._s = s; this.paint(); }
+  set hass(h) {}
+  paint() {
+    const label = (this.getAttribute('icon') || (this._s && this._s.entity_id) || '?').split(/[.:]/)[1] || '?';
+    const size = 'var(--mdc-icon-size, 24px)';
+    this.style.cssText = `display:inline-flex;align-items:center;justify-content:center;width:${size};height:${size};border:2px solid currentColor;border-radius:50%;font:600 calc(${size} * .4)/1 sans-serif;text-transform:uppercase;box-sizing:border-box`;
+    this.textContent = label[0];
+  }
+});
+import { makeFakeHass } from './fakehass.js';
+await import('../../dist/mosaic.js');
+const p = new URLSearchParams(location.search);
+const card = document.querySelector('mosaic-start');
+const conf = { accent: p.get('accent') || 'cobalt', theme: p.get('theme') || 'auto' };
+if (p.has('cols')) conf.columns = Number(p.get('cols'));
+card.setConfig(conf);
+window.hass = makeFakeHass((h) => { card.hass = h; window.hass = h; }, { agent: p.get('agent') || 'anthropic' });
+if (p.get('theme') === 'light') window.hass.themes.darkMode = false;
+card.hass = window.hass;
+window.card = card;
+window.moreInfo = [];
+card.addEventListener('hass-more-info', (e) => window.moreInfo.push(e.detail.entityId));
+window.booted = true;
+</script>

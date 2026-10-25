@@ -1,0 +1,15 @@
+{
+  "name": "mosaic",
+  "version": "0.1.0",
+  "private": true,
+  "description": "A live-tile Start screen for Home Assistant, after Windows Phone",
+  "license": "MIT",
+  "type": "module",
+  "scripts": {
+    "build": "esbuild src/card.js --bundle --format=esm --target=es2020 --minify --legal-comments=inline --loader:.woff2=dataurl --outfile=dist/mosaic.js",
+    "test": "node --test test/*.test.js"
+  },
+  "devDependencies": {
+    "esbuild": "^0.25.0"
+  }
+}
