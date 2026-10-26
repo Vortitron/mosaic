@@ -5,6 +5,7 @@
 // theme: auto             # dark | light | auto (follows Home Assistant)
 // columns: 6              # small-tile columns on a phone (6 or 8)
 // light_colours: false    # true: a lit lamp's tile takes the lamp's colour
+// wallpaper: /local/me.jpg  # or camera.x / image.x: seen through the tiles, as on Windows Phone 10
 // assistant:              # false hides it
 //   agent_id: conversation.claude   # default: the home's preferred Assist pipeline
 //   name: Claude
@@ -24,7 +25,7 @@ import {
 } from './model.js';
 import { Conversation, resolveAgent } from './assistant.js';
 
-const VERSION = '0.1.0';
+const VERSION = '0.2.0';
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
 const reduced = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
 const ON = ['on', 'open', 'opening', 'unlocked', 'playing', 'home', 'heat', 'cool', 'heat_cool', 'auto', 'cleaning'];
@@ -179,8 +180,43 @@ class MosaicStart extends HTMLElement {
     });
     root.querySelector('.listbody').addEventListener('click', (e) => this._listClick(e));
     this._listSig = null;
+    this._wallpaper();
     this._fit();
     this._refresh();
+  }
+
+  // Windows Phone 10's "tiles show the background": one picture behind the
+  // whole Start screen, seen only through the tiles. Each tile shows its own
+  // piece of it, so it works where background-attachment: fixed does not (iOS).
+  _wallpaper() {
+    const w = this._config.wallpaper;
+    const st = w && /^(camera|image)\./.test(w) ? this._hass.states[w] : null;
+    const url = st ? st.attributes.entity_picture : w || null;
+    this._wallUrl = url;
+    const root = this.shadowRoot.querySelector('.root');
+    root.classList.toggle('wall', !!url);
+    if (!url) return;
+    this.style.setProperty('--wall', `url("${String(url).replace(/["\\]/g, '')}")`);
+    const img = new Image();
+    img.onload = () => {
+      this._wallSize = [img.naturalWidth, img.naturalHeight];
+      this._placeWall();
+    };
+    img.src = url;
+  }
+
+  _placeWall() {
+    const groups = this.shadowRoot.querySelector('.groups');
+    if (!this._wallUrl || !groups || !this._wallSize) return;
+    const [iw, ih] = this._wallSize;
+    const W = groups.scrollWidth;
+    const H = Math.max(groups.scrollHeight, this.clientHeight);
+    const s = Math.max(W / iw, H / ih);
+    this.style.setProperty('--wall-size', `${Math.ceil(iw * s)}px ${Math.ceil(ih * s)}px`);
+    for (const t of this._tiles.values()) {
+      if (!t.el) continue;
+      t.el.style.backgroundPosition = `${-t.el.offsetLeft}px ${-t.el.offsetTop}px`;
+    }
   }
 
   _fit() {
@@ -206,6 +242,7 @@ class MosaicStart extends HTMLElement {
     const top = Math.max(0, this.getBoundingClientRect().top + (window.scrollY || 0));
     const h = Math.max(420, window.innerHeight - top);
     this.style.setProperty('--h', `${h}px`);
+    requestAnimationFrame(() => this._placeWall());
   }
 
   // --- updates -------------------------------------------------------------------
@@ -245,7 +282,7 @@ class MosaicStart extends HTMLElement {
     el.classList.toggle('off', !m.active);
     el.classList.toggle('missing', !!m.missing);
     const rgb = this._config.light_colours && m.rgb;
-    el.style.background = rgb ? `rgb(${m.rgb.join(',')})` : '';
+    el.style.backgroundColor = rgb && !this._wallUrl ? `rgb(${m.rgb.join(',')})` : '';
     el.querySelector('.label').textContent = m.label || '';
     el.querySelector('.badge').textContent = m.badge || '';
     el.setAttribute('aria-label', [m.label, m.badge].filter(Boolean).join(', ') || 'tile');

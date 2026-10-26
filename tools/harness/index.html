@@ -24,6 +24,7 @@ const p = new URLSearchParams(location.search);
 const card = document.querySelector('mosaic-start');
 const conf = { accent: p.get('accent') || 'cobalt', theme: p.get('theme') || 'auto' };
 if (p.has('cols')) conf.columns = Number(p.get('cols'));
+if (p.has('wall')) conf.wallpaper = p.get('wall') || '/tools/harness/art.svg';
 card.setConfig(conf);
 window.hass = makeFakeHass((h) => { card.hass = h; window.hass = h; }, { agent: p.get('agent') || 'anthropic' });
 if (p.get('theme') === 'light') window.hass.themes.darkMode = false;

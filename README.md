@@ -33,6 +33,7 @@ accent: cobalt          # lime green emerald teal cyan cobalt indigo violet pink
 theme: auto             # dark | light | auto (follows Home Assistant)
 columns: 6              # small-tile columns on a phone: 6 (three medium tiles across) or 8
 light_colours: false    # true: a lit lamp's tile takes the lamp's colour
+wallpaper: /local/me.jpg  # or an image.* / camera.* entity: seen through the tiles, as on Windows Phone 10
 assistant:              # false hides the assistant
   agent_id: conversation.claude   # default: your preferred Assist pipeline's agent
   name: Claude
@@ -48,6 +49,10 @@ groups:                 # leave out to have Mosaic lay the home out itself
 ```
 
 Tap a tile to toggle it, or to open its room. Hold a tile to open Home Assistant's dialog for it. Locks, alarms and climate never act on a tap; they open the dialog instead. A switch that looks like it runs the house (servers, a fridge, a boiler, an EV charger and the like) asks before it switches.
+
+## Let Claude lay it out
+
+The auto layout is a start. If Claude can reach your home (the Vome MCP, or any Home Assistant MCP server that can save dashboards), ask it something like *"Make me a Mosaic start screen: the rooms I use most as wide tiles, the kettle and the front door on the first screen."* It writes the `groups:` above and saves the dashboard. Nothing in the card needs to change for that.
 
 ## Privacy
 

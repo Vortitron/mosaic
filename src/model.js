@@ -149,7 +149,7 @@ export function autoGroups(hass, { assistant = true } = {}) {
   if (assistant) top.push({ type: 'assistant', size: 'medium' });
   const weather = first('weather');
   if (weather) top.push({ entity: weather, size: 'wide' });
-  const people = Object.keys(hass.states).filter((id) => domainOf(id) === 'person' && isUseful(hass, id)).slice(0, 4);
+  const people = Object.keys(hass.states).filter((id) => domainOf(id) === 'person' && isUseful(hass, id) && !unavailable(hass.states[id])).slice(0, 4);
   for (const p of people) top.push({ entity: p, size: people.length > 2 ? 'small' : 'medium' });
   if (all.some((id) => domainOf(id) === 'media_player')) top.push({ type: 'media', size: 'wide' });
   const groups = [{ name: '', tiles: top }];

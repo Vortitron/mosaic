@@ -34,7 +34,7 @@ button { font: inherit; color: inherit; background: none; border: 0; padding: 0;
 .desk .tolist { display: none; }
 
 /* --- Start ------------------------------------------------------------------ */
-.groups { display: flex; flex-wrap: wrap; gap: 28px 44px; align-items: flex-start; }
+.groups { position: relative; display: flex; flex-wrap: wrap; gap: 28px 44px; align-items: flex-start; }
 .group { width: calc(var(--cols) * var(--unit) + (var(--cols) - 1) * var(--gap)); }
 .group h2 { margin: 6px 0 10px; font-size: 15px; font-weight: 350; text-transform: lowercase; color: var(--fg); }
 .group:first-child h2:empty { display: none; }
@@ -43,6 +43,10 @@ button { font: inherit; color: inherit; background: none; border: 0; padding: 0;
   user-select: none; -webkit-user-select: none; -webkit-tap-highlight-color: transparent; transition: transform 90ms ease-out, background-color 300ms; outline-offset: 2px; touch-action: manipulation; }
 .tile.off { background: color-mix(in srgb, var(--accent) 34%, var(--bg)); }
 :host(.light) .tile.off { background: color-mix(in srgb, var(--accent) 50%, #9a9a9a); }
+/* !important beats the light theme's off tiles, but not the inline background-position each tile gets */
+.wall .tile { background-color: #000 !important; background-image: var(--wall) !important; background-repeat: no-repeat !important; background-size: var(--wall-size, cover) !important; }
+.wall .tile::before { content: ''; position: absolute; inset: 0; background: color-mix(in srgb, var(--accent) 42%, transparent); transition: background-color 300ms; }
+.wall .tile.off::before { background: rgba(0, 0, 0, .55); }
 .tile.missing { background: var(--chrome); color: var(--fg2); }
 .tile.pressed { transform: scale(0.96); }
 .tile.small { grid-column: span 1; grid-row: span 1; }
