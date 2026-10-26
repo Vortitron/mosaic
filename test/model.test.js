@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { makeFakeHass } from '../tools/harness/fakehass.js';
-import { allList, autoGroups, deviceList, primaryEntity, pivotsFor, looksImportant, nextEvent, roomPivots, serviceFor, shortName, tapAction, tileModel, accentColour } from '../src/model.js';
+import { alphabet, letterOf, allList, autoGroups, deviceList, primaryEntity, pivotsFor, looksImportant, nextEvent, roomPivots, serviceFor, shortName, tapAction, tileModel, accentColour } from '../src/model.js';
 import { agentName, Conversation } from '../src/assistant.js';
 
 const hass = makeFakeHass();
@@ -119,4 +119,16 @@ test('a device opens with its own pivots', () => {
   assert.deepEqual(pivotsFor(hass, kettle.ids).map(([p]) => p), ['power', 'sensors']);
   assert.equal(shortName(hass, 'sensor.kettle_power', hass.devices.kettle_plug), 'Power');
   assert.equal(primaryEntity(hass, ['sensor.kettle_power', 'switch.kettle'], { name: 'Something else' }), 'switch.kettle');
+});
+
+test('the alphabet follows the home: Swedish has its own Å Ä Ö after Z, English files Å under A', () => {
+  assert.equal(letterOf('Ånäsmotet sydväst', 'sv'), 'å');
+  assert.equal(letterOf('Ånäsmotet sydväst', 'en'), 'a');
+  assert.equal(letterOf('Øresund', 'da'), 'ø');
+  assert.equal(letterOf('Éclairage', 'fr'), 'e');
+  assert.equal(letterOf('3D printer', 'sv'), '#');
+  assert.deepEqual(alphabet('sv').slice(-4), ['z', 'å', 'ä', 'ö']);
+  const sv = { ...hass, language: 'sv', states: { ...hass.states, 'light.ovre': { entity_id: 'light.ovre', state: 'on', attributes: { friendly_name: 'Övre hallen' } }, 'light.alpha': { entity_id: 'light.alpha', state: 'on', attributes: { friendly_name: 'Zebra' } } } };
+  const letters = allList(sv).map(([l]) => l);
+  assert.deepEqual(letters.slice(-2), ['z', 'ö']);
 });

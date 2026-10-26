@@ -5,6 +5,7 @@
 // theme: auto             # dark | light | auto (follows Home Assistant)
 // columns: 6              # small-tile columns on a phone (6 or 8)
 // list: devices           # what the A-Z list starts on: devices | entities (each viewer can switch)
+// editable: true          # admins hold a tile to customise Start; false: hold opens the dialog
 // light_colours: false    # true: a lit lamp's tile takes the lamp's colour
 // wallpaper: /local/me.jpg  # or camera.x / image.x: seen through the tiles, as on Windows Phone 10
 // assistant:              # false hides it
@@ -21,12 +22,12 @@
 import { CSS as STYLES } from './styles.js';
 import { installFonts } from './fonts.js';
 import {
-  ACCENTS, accentColour, allList, autoGroups, canToggle, deviceList, deviceName, domainOf, entitiesByArea,
-  nameOf, pivotsFor, serviceFor, shortName, spanOf, stateText, tapAction, tileKey, tileModel,
+  ACCENTS, accentColour, allList, alphabet, langOf, autoGroups, canToggle, deviceList, deviceName, domainOf, entitiesByArea,
+  nameOf, pivotsFor, serviceFor, shortName, spanOf, stateText, tapAction, tileModel,
 } from './model.js';
 import { Conversation, resolveAgent } from './assistant.js';
 
-const VERSION = '0.3.0';
+const VERSION = '0.4.0';
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
 const reduced = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
 const ON = ['on', 'open', 'opening', 'unlocked', 'playing', 'home', 'heat', 'cool', 'heat_cool', 'auto', 'cleaning'];
@@ -139,22 +140,14 @@ class MosaicStart extends HTMLElement {
 
   _render() {
     if (!this._hass || !this._config) return;
-    const groups = this._groups();
-    this._layoutSig = JSON.stringify(groups);
+    this._edit = null;
     this.classList.toggle('light', !this._dark());
     this.style.setProperty('--accent', accentColour(this._config.accent));
-    this._tiles.clear();
-    const tileHtml = (spec) => {
-      const key = tileKey(spec);
-      this._tiles.set(key, { spec, face: 0, nextFlip: Date.now() + 3000 + Math.random() * 6000, sig: null });
-      const [w, h] = spanOf(spec.size);
-      return `<div class="tile ${esc(spec.size || 'medium')}" role="button" tabindex="0" data-key="${esc(key)}" style="--w:${w};--h2:${h}"><div class="faces"></div><div class="label"></div><div class="badge"></div></div>`;
-    };
     this.shadowRoot.innerHTML = `<style>${STYLES}</style>
       <div class="root">
         <div class="pan">
           <div class="page start">
-            <div class="groups">${groups.map((g) => `<section class="group"><h2>${esc(g.name)}</h2><div class="grid">${g.tiles.map(tileHtml).join('')}</div></section>`).join('')}</div>
+            <div class="groups"></div>
             <button class="tolist" aria-label="all things">all <span class="arrow">&rarr;</span></button>
           </div>
           <div class="page list">
@@ -165,11 +158,15 @@ class MosaicStart extends HTMLElement {
             <div class="listbody"></div>
           </div>
         </div>
+        <div class="editbar" role="toolbar" aria-label="customise start">
+          <button data-done="save">done</button><button data-done="auto">automatic</button><button data-done="cancel">cancel</button>
+        </div>
+        <div class="toast" role="status" aria-live="polite"></div>
         <div class="layer"></div>
       </div>`;
     const root = this.shadowRoot;
-    for (const el of root.querySelectorAll('.tile')) this._tiles.get(el.dataset.key).el = el;
     this._wireTiles(root.querySelector('.groups'));
+    for (const b of root.querySelectorAll('.editbar button')) b.addEventListener('click', () => this._finishEdit(b.dataset.done));
     root.querySelector('.tolist').addEventListener('click', () => {
       const pan = root.querySelector('.pan');
       pan.scrollTo({ left: pan.clientWidth, behavior: reduced() ? 'auto' : 'smooth' });
@@ -183,6 +180,7 @@ class MosaicStart extends HTMLElement {
       if (e.key === 'Enter' && this._filter.trim() && this._config.assistant !== false) this._openAssist(this._filter.trim());
     });
     root.querySelector('.listbody').addEventListener('click', (e) => this._listClick(e));
+    this._wireHold(root.querySelector('.listbody'), '.row[data-entity], .row[data-device]', (row) => this._listHold(row));
     for (const b of root.querySelectorAll('.listmodes button')) b.addEventListener('click', () => this._setListMode(b.dataset.mode));
     // The list is long on a real home: it is only kept up to date while it is
     // on screen (on a phone it is a swipe away).
@@ -199,7 +197,64 @@ class MosaicStart extends HTMLElement {
     this._setListMode(this._listMode(), false);
     this._wallpaper();
     this._fit();
+    this._fillGroups();
     this._refresh();
+  }
+
+  // The tiles themselves. Called on render, when the automatic layout
+  // changes (a new room), and on every move while customising.
+  _fillGroups() {
+    const box = this.shadowRoot.querySelector('.groups');
+    if (!box || !this._hass) return;
+    const groups = this._edit ? this._edit.groups : this._groups();
+    if (!this._edit) this._layoutSig = JSON.stringify(groups);
+    const sel = this._edit && this._edit.sel;
+    const handles = this._edit ? '<button class="ebtn unpin" data-edit="unpin" aria-label="unpin">&#x2715;</button><button class="ebtn resize" data-edit="resize" aria-label="resize">&#x2198;</button>' : '';
+    box.innerHTML = groups
+      .map((g, gi) => `<section class="group" data-g="${gi}"><h2>${esc(g.name)}</h2><div class="grid">${g.tiles
+        .map((spec, ti) => {
+          const size = ['small', 'medium', 'wide', 'large'].includes(spec.size) ? spec.size : 'medium';
+          const key = `${gi}.${ti}`;
+          return `<div class="tile ${size}${key === sel ? ' sel' : ''}" role="button" tabindex="0" data-key="${key}"><div class="faces"></div><div class="label"></div><div class="badge"></div>${handles}</div>`;
+        })
+        .join('')}</div></section>`)
+      .join('');
+    this._tiles = new Map();
+    for (const el of box.querySelectorAll('.tile')) {
+      const [gi, ti] = el.dataset.key.split('.').map(Number);
+      this._tiles.set(el.dataset.key, { spec: groups[gi].tiles[ti], el, face: 0, nextFlip: Date.now() + 3000 + Math.random() * 6000, sig: null });
+    }
+    this._refreshTiles();
+    requestAnimationFrame(() => this._placeWall());
+  }
+
+  // Hold to act, on any list of rows (and right-click with a mouse).
+  _wireHold(container, selector, onHold) {
+    let timer = null;
+    let start = null;
+    let mouse = false;
+    container.addEventListener('pointerdown', (e) => {
+      mouse = e.pointerType === 'mouse';
+      const el = e.target.closest(selector);
+      if (!el || e.target.closest('button')) return;
+      start = [e.clientX, e.clientY];
+      timer = setTimeout(() => {
+        this._suppressClick = true;
+        onHold(el);
+      }, 550);
+    });
+    const stop = () => clearTimeout(timer);
+    container.addEventListener('pointermove', (e) => {
+      if (start && Math.hypot(e.clientX - start[0], e.clientY - start[1]) > 10) stop();
+    });
+    container.addEventListener('pointerup', stop);
+    container.addEventListener('pointercancel', stop);
+    container.addEventListener('contextmenu', (e) => {
+      const el = e.target.closest(selector);
+      if (!el) return;
+      e.preventDefault();
+      if (mouse) onHold(el);
+    });
   }
 
   // Windows Phone 10's "tiles show the background": one picture behind the
@@ -275,9 +330,15 @@ class MosaicStart extends HTMLElement {
 
   _refresh() {
     if (!this._hass || !this.shadowRoot.querySelector('.root')) return;
-    if (!this._config.groups && !this._config.tiles && JSON.stringify(this._groups()) !== this._layoutSig) return this._render();
     const dark = this._dark();
     if (this.classList.contains('light') === dark) this.classList.toggle('light', !dark);
+    if (!this._edit && !this._config.groups && !this._config.tiles && JSON.stringify(this._groups()) !== this._layoutSig) this._fillGroups();
+    else this._refreshTiles();
+    this._renderList();
+    if (this._overlay && (this._overlay.kind === 'room' || this._overlay.kind === 'device')) this._renderApp();
+  }
+
+  _refreshTiles() {
     const now = Date.now();
     const assistant = this._agent ? { name: this._agent.name, last: this._conv.last } : null;
     for (const t of this._tiles.values()) {
@@ -289,8 +350,6 @@ class MosaicStart extends HTMLElement {
       if (t.face >= m.faces.length) t.face = 0;
       this._paintTile(t);
     }
-    this._renderList();
-    if (this._overlay && (this._overlay.kind === 'room' || this._overlay.kind === 'device')) this._renderApp();
   }
 
   _paintTile(t) {
@@ -366,7 +425,7 @@ class MosaicStart extends HTMLElement {
   }
 
   _flipSome() {
-    if (document.hidden || this._overlay || !this._hass || reduced()) return;
+    if (document.hidden || this._overlay || this._edit || !this._hass || reduced()) return;
     const now = Date.now();
     let turned = 0;
     for (const t of this._tiles.values()) {
@@ -389,16 +448,32 @@ class MosaicStart extends HTMLElement {
 
   // --- tapping -------------------------------------------------------------------
 
+  // Tiles are wired once, on the .groups element, so re-filling the groups
+  // (which editing does on every move) keeps the listeners and any drag.
   _wireTiles(container) {
     let hold = null;
     let start = null;
     let held = false;
+    let dragging = false;
     const tileOf = (e) => e.target.closest && e.target.closest('.tile');
+    const cancel = () => {
+      clearTimeout(hold);
+      for (const el of container.querySelectorAll('.pressed')) el.classList.remove('pressed');
+    };
     container.addEventListener('pointerdown', (e) => {
       const el = tileOf(e);
       if (!el) return;
       held = false;
+      dragging = false;
       start = [e.clientX, e.clientY];
+      if (this._edit) {
+        if (e.target.closest('.ebtn')) return;
+        if (this._edit.sel !== el.dataset.key) {
+          this._edit.sel = el.dataset.key;
+          this._fillGroups();
+        }
+        return;
+      }
       el.classList.add('pressed');
       hold = setTimeout(() => {
         held = true;
@@ -406,27 +481,43 @@ class MosaicStart extends HTMLElement {
         this._hold(this._tiles.get(el.dataset.key));
       }, 550);
     });
-    const cancel = () => {
-      clearTimeout(hold);
-      for (const el of container.querySelectorAll('.pressed')) el.classList.remove('pressed');
-    };
     container.addEventListener('pointermove', (e) => {
-      if (start && Math.hypot(e.clientX - start[0], e.clientY - start[1]) > 10) cancel();
+      if (!start) return;
+      const far = Math.hypot(e.clientX - start[0], e.clientY - start[1]) > 10;
+      if (this._edit && this._edit.sel && (dragging || far) && e.buttons) {
+        dragging = true;
+        this._dragTo(e.clientX, e.clientY);
+        return;
+      }
+      if (far) cancel();
     });
-    container.addEventListener('pointerup', cancel);
-    container.addEventListener('pointercancel', cancel);
+    const up = () => {
+      cancel();
+      start = null;
+      dragging = false;
+    };
+    container.addEventListener('pointerup', up);
+    container.addEventListener('pointercancel', up);
     container.addEventListener('pointerleave', cancel);
     container.addEventListener('contextmenu', (e) => {
       if (tileOf(e)) e.preventDefault();
     });
     container.addEventListener('click', (e) => {
       const el = tileOf(e);
-      if (!el || held) return;
+      if (!el) return;
+      if (this._edit) {
+        // A drag never starts on a handle, so a click on one is always meant.
+        const b = e.target.closest('.ebtn');
+        if (b) this._editAction(b.dataset.edit, el.dataset.key);
+        return;
+      }
+      if (held) return;
       this._tap(this._tiles.get(el.dataset.key));
     });
     container.addEventListener('keydown', (e) => {
       const el = tileOf(e);
-      if (el && (e.key === 'Enter' || e.key === ' ')) {
+      if (!el || this._edit) return;
+      if (e.key === 'Enter' || e.key === ' ') {
         e.preventDefault();
         this._tap(this._tiles.get(el.dataset.key));
       }
@@ -445,9 +536,212 @@ class MosaicStart extends HTMLElement {
 
   _hold(t) {
     if (!t || !t.model) return;
+    if (this._canEdit()) return this._startEdit(t.el.dataset.key);
     const id = t.model.entity || (t.model.tap && t.model.tap.entity);
     if (id) this._moreInfo(id);
     else if (t.model.tap.action === 'room') this._openApp({ kind: 'room', area: t.model.tap.area });
+  }
+
+  // --- customising Start --------------------------------------------------------
+  //
+  // As on the phone: hold a tile and Start comes loose. Drag a tile to move
+  // it, tap the arrow to resize it, the cross to unpin it. "done" saves the
+  // layout into the dashboard (the strategy's options, or this card's config),
+  // which is why only an admin gets this; everyone else's hold opens the
+  // details dialog as before.
+
+  _canEdit() {
+    const user = this._hass && this._hass.user;
+    return !!(user && user.is_admin) && this._config.editable !== false;
+  }
+
+  // Where the layout gets written: a strategy dashboard keeps it in the
+  // strategy's options, any other in this card's own config. A YAML
+  // dashboard can't be written from here at all.
+  async _saveTarget() {
+    const seg = location.pathname.split('/')[1] || 'lovelace';
+    const urlPath = seg === 'lovelace' ? null : seg;
+    let config;
+    try {
+      config = await this._hass.callWS({ type: 'lovelace/config', url_path: urlPath });
+    } catch (e) {
+      return { error: 'Mosaic could not read this dashboard to change it.' };
+    }
+    const withGroups = (obj, groups) => {
+      const out = { ...obj };
+      delete out.tiles;
+      if (groups) out.groups = groups;
+      else delete out.groups;
+      return out;
+    };
+    if (config.strategy) {
+      if (config.strategy.type !== 'custom:mosaic') return { error: 'This dashboard is built by another strategy.' };
+      return { urlPath, build: (groups) => ({ ...config, strategy: withGroups(config.strategy, groups) }) };
+    }
+    // Find this card in the views. Two Mosaic cards on one dashboard: we
+    // can't tell which one is us, so say so rather than guess.
+    const paths = [];
+    const walk = (node, path) => {
+      if (Array.isArray(node)) node.forEach((n, i) => walk(n, [...path, i]));
+      else if (node && typeof node === 'object') {
+        if (node.type === 'custom:mosaic-start') paths.push(path);
+        for (const [k, v] of Object.entries(node)) if (v && typeof v === 'object') walk(v, [...path, k]);
+      }
+    };
+    walk(config, []);
+    if (paths.length !== 1) return { error: 'There is more than one Mosaic card on this dashboard; change the layout in its card settings.' };
+    const path = paths[0];
+    return {
+      urlPath,
+      build: (groups) => {
+        const copy = JSON.parse(JSON.stringify(config));
+        let parent = copy;
+        for (const k of path.slice(0, -1)) parent = parent[k];
+        const last = path[path.length - 1];
+        parent[last] = withGroups(parent[last], groups);
+        return copy;
+      },
+    };
+  }
+
+  async _save(groups, done) {
+    const target = await this._saveTarget();
+    if (target.error) {
+      this._toast(target.error);
+      return false;
+    }
+    try {
+      await this._hass.callWS({ type: 'lovelace/config/save', url_path: target.urlPath, config: target.build(groups) });
+    } catch (e) {
+      this._toast(`Not saved: ${(e && e.message) || e}`);
+      return false;
+    }
+    // Home Assistant reloads the dashboard with the saved config; show it
+    // straight away rather than wait for that.
+    const next = { ...this._config };
+    delete next.tiles;
+    if (groups) next.groups = groups;
+    else delete next.groups;
+    this._config = next;
+    if (done) this._toast(done);
+    return true;
+  }
+
+  async _startEdit(key) {
+    const target = await this._saveTarget();
+    if (target.error) return this._toast(target.error);
+    this._edit = { groups: JSON.parse(JSON.stringify(this._groups())), sel: key };
+    this.shadowRoot.querySelector('.root').classList.add('editing');
+    this._fillGroups();
+  }
+
+  _endEdit() {
+    this._edit = null;
+    this.shadowRoot.querySelector('.root').classList.remove('editing');
+    this._fillGroups();
+  }
+
+  async _finishEdit(mode) {
+    if (mode === 'cancel') return this._endEdit();
+    const groups = mode === 'auto' ? null : this._edit.groups.filter((g) => g.tiles.length || g.name);
+    const ok = await this._save(groups, mode === 'auto' ? 'Start is back to the automatic layout' : 'Start saved');
+    if (ok) this._endEdit();
+  }
+
+  _specAt(key) {
+    const [g, t] = key.split('.').map(Number);
+    return [g, t];
+  }
+
+  _editAction(kind, key) {
+    const e = this._edit;
+    const [g, t] = this._specAt(key);
+    const tiles = e.groups[g].tiles;
+    if (kind === 'unpin') {
+      tiles.splice(t, 1);
+      e.sel = null;
+    } else if (kind === 'resize') {
+      const order = ['small', 'medium', 'wide', 'large'];
+      const spec = tiles[t];
+      spec.size = order[(order.indexOf(spec.size || 'medium') + 1) % order.length];
+    }
+    this._fillGroups();
+  }
+
+  // Dragging: whenever the pointer is over another tile, the dragged one
+  // takes its place; over the empty end of a group, it goes last there.
+  _dragTo(x, y) {
+    const e = this._edit;
+    if (!e || !e.sel) return;
+    const under = this.shadowRoot.elementFromPoint(x, y);
+    if (!under) return;
+    const [g, t] = this._specAt(e.sel);
+    const overTile = under.closest('.tile');
+    let to;
+    if (overTile && overTile.dataset.key !== e.sel) to = this._specAt(overTile.dataset.key);
+    else if (!overTile && under.closest('.grid')) {
+      const gi = Number(under.closest('.group').dataset.g);
+      to = [gi, e.groups[gi].tiles.length];
+    }
+    if (!to) return;
+    const [spec] = e.groups[g].tiles.splice(t, 1);
+    let [tg, tt] = to;
+    tt = Math.min(tt, e.groups[tg].tiles.length);
+    e.groups[tg].tiles.splice(tt, 0, spec);
+    e.sel = `${tg}.${tt}`;
+    this._fillGroups();
+  }
+
+  // Pin a thing from the list to the end of the first group.
+  async _pin(entityId) {
+    const groups = JSON.parse(JSON.stringify(this._groups()));
+    if (!groups.length) groups.push({ name: '', tiles: [] });
+    if (groups.some((g) => g.tiles.some((s) => s.entity === entityId))) return this._toast('Already on Start');
+    groups[0].tiles.push({ entity: entityId, size: 'medium' });
+    if (await this._save(groups, `${nameOf(this._hass, entityId)} pinned to Start`)) this._fillGroups();
+  }
+
+  _toast(text) {
+    const el = this.shadowRoot.querySelector('.toast');
+    if (!el) return;
+    el.textContent = text;
+    el.classList.add('on');
+    clearTimeout(this._toastTimer);
+    this._toastTimer = setTimeout(() => el.classList.remove('on'), 3500);
+  }
+
+  // A Windows Phone context menu: a plain list of what you can do, over a dim page.
+  _menu(title, items) {
+    const under = this._overlay;
+    this._overlay = { kind: 'menu', under };
+    const div = document.createElement('div');
+    div.className = 'overlay msg';
+    div.innerHTML = `<div class="box menu" role="menu" aria-label="${esc(title)}"><h3>${esc(title)}</h3>${items.map((it, i) => `<button role="menuitem" data-i="${i}">${esc(it.label)}</button>`).join('')}</div>`;
+    this._layer().append(div);
+    const finish = (i) => {
+      div.remove();
+      this._overlay = under;
+      if (i !== null && items[i]) items[i].run();
+    };
+    div.addEventListener('click', (e) => {
+      const b = e.target.closest('[data-i]');
+      if (b) finish(Number(b.dataset.i));
+      else if (e.target === div) finish(null);
+    });
+    const first = div.querySelector('button');
+    if (first) first.focus();
+  }
+
+  _listHold(row) {
+    const hass = this._hass;
+    const id = row.dataset.entity || (row.querySelector('ha-state-icon') && row.querySelector('ha-state-icon').dataset.entity);
+    if (!id) return;
+    const title = row.querySelector('.rname span').textContent;
+    const items = [];
+    if (this._canEdit()) items.push({ label: 'pin to start', run: () => this._pin(id) });
+    if (row.dataset.device) items.push({ label: 'open', run: () => this._openApp({ kind: 'device', device: row.dataset.device }) });
+    items.push({ label: 'details', run: () => this._moreInfo(id) });
+    this._menu(title || nameOf(hass, id), items);
   }
 
   _act(action, id) {
@@ -473,8 +767,9 @@ class MosaicStart extends HTMLElement {
   }
 
   _key(e) {
-    if (e.key !== 'Escape' || !this._overlay) return;
-    this._close();
+    if (e.key !== 'Escape') return;
+    if (this._overlay) this._close();
+    else if (this._edit) this._endEdit();
   }
 
   // --- overlays --------------------------------------------------------------
@@ -690,6 +985,10 @@ class MosaicStart extends HTMLElement {
   }
 
   _listClick(e) {
+    if (this._suppressClick) {
+      this._suppressClick = false;
+      return;
+    }
     const letter = e.target.closest('.letter');
     if (letter) return this._openJump();
     const ask = e.target.closest('[data-ask]');
@@ -706,7 +1005,7 @@ class MosaicStart extends HTMLElement {
   _openJump() {
     const have = new Set(this._listGroups().map(([l]) => l));
     this._overlay = { kind: 'jump' };
-    const letters = ['#', ...'abcdefghijklmnopqrstuvwxyz'];
+    const letters = ['#', ...alphabet(langOf(this._hass))];
     this._layer().innerHTML = `<div class="overlay jump" role="dialog" aria-label="jump to a letter"><div class="letters">${letters.map((l) => `<button data-l="${l}" ${have.has(l) ? '' : 'disabled'}>${l}</button>`).join('')}</div></div>`;
     const jump = this._layer().firstElementChild;
     jump.addEventListener('click', (e) => {

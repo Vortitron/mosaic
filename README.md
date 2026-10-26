@@ -9,6 +9,7 @@ A live-tile Start screen for Home Assistant, after Windows Phone 10.
 - **The A–Z list:** swipe left (on a desktop it sits beside the tiles) for everything in the house, with search and a letter jump list. It lists **devices** (a smart plug is one row, not five sensors; tap it to open it like a room) or every **entity**: switch at the top, and each viewer's choice is remembered.
 - **An assistant where Cortana was:** a tile and the search box talk to your home's Assist agent. If that agent is Claude (the Anthropic integration), the tile says Claude.
 - **No setup:** with no config, Mosaic lays your home out from its floors and areas.
+- **Customise it like a phone:** hold a tile and Start comes loose. Drag tiles to move them, tap ↘ to resize, ✕ to unpin, then *done*. Hold anything in the list to *pin to start*. *automatic* goes back to the layout Mosaic picks. Changes are saved into the dashboard, so only admins can make them.
 
 ## Install
 
@@ -51,7 +52,7 @@ groups:                 # leave out to have Mosaic lay the home out itself
       - type: clock       # clock | assistant | media (whatever is playing)
 ```
 
-Tap a tile to toggle it, or to open its room. Hold a tile to open Home Assistant's dialog for it. Locks, alarms and climate never act on a tap; they open the dialog instead. A switch that looks like it runs the house (servers, a fridge, a boiler, an EV charger and the like) asks before it switches.
+Tap a tile to toggle it, or to open its room. Holding a tile customises Start (admins), or opens Home Assistant's dialog for it (everyone else; `editable: false` makes that the rule for admins too). Locks, alarms and climate never act on a tap; they open the dialog instead. A switch that looks like it runs the house (servers, a fridge, a boiler, an EV charger and the like) asks before it switches.
 
 ## Let Claude lay it out
 
@@ -77,4 +78,4 @@ npm test             # the model, in node
 python3 -m http.server 18766   # then open /tools/harness/ (fake home; ?theme=light&accent=lime&cols=8)
 ```
 
-`tools/hatest.cjs` drives a real Home Assistant (login, room toggle, Assist) with Playwright.
+`tools/hatest.cjs`, `tools/listtest.cjs` and `tools/haedittest.cjs` drive a real Home Assistant with Playwright (login, room toggle, Assist, the device list, saving a customised Start). `tools/edittest.cjs` runs the customising against the harness.

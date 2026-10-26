@@ -4,10 +4,29 @@
 
 export const domainOf = (id) => String(id).split('.')[0];
 
-// One collator for every A-Z sort: localeCompare with options builds one per
-// call, which is most of the cost of sorting a few thousand names.
-const collator = new Intl.Collator(undefined, { sensitivity: 'base' });
-const byName = (a, b) => collator.compare(a, b);
+// The home's language decides the alphabet: in Swedish, Å Ä Ö are letters of
+// their own after Z (and sort there), as on a Swedish phone; elsewhere Å is
+// filed under A.
+const EXTRA_LETTERS = { sv: 'åäö', fi: 'åäö', nb: 'æøå', nn: 'æøå', no: 'æøå', da: 'æøå' };
+export const langOf = (hass) => String((hass && ((hass.locale && hass.locale.language) || hass.language)) || 'en').toLowerCase().split('-')[0];
+export const alphabet = (lang) => [...'abcdefghijklmnopqrstuvwxyz', ...(EXTRA_LETTERS[lang] || '')];
+
+// One collator per language for every A-Z sort: localeCompare with options
+// builds one per call, which is most of the cost of sorting thousands of names.
+const collators = new Map();
+function collatorFor(lang) {
+  if (!collators.has(lang)) {
+    let c;
+    try {
+      c = new Intl.Collator(lang, { sensitivity: 'base' });
+    } catch (e) {
+      c = new Intl.Collator(undefined, { sensitivity: 'base' });
+    }
+    collators.set(lang, c);
+  }
+  return collators.get(lang);
+}
+const byName = (a, b, lang = 'en') => collatorFor(lang).compare(a, b);
 
 const SIZES = { small: [1, 1], medium: [2, 2], wide: [4, 2], large: [4, 4] };
 export const spanOf = (size) => SIZES[size] || SIZES.medium;
@@ -144,7 +163,8 @@ export function entitiesByArea(hass) {
     if (!out.has(key)) out.set(key, []);
     out.get(key).push(id);
   }
-  for (const ids of out.values()) ids.sort((a, b) => byName(nameOf(hass, a), nameOf(hass, b)));
+  const lang = langOf(hass);
+  for (const ids of out.values()) ids.sort((a, b) => byName(nameOf(hass, a), nameOf(hass, b), lang));
   byAreaCache.set(hass.states, { areas: hass.areas, entities: hass.entities, value: out });
   return out;
 }
@@ -215,7 +235,7 @@ function buildDeviceList(hass, filter) {
     if (f && !`${name} ${area ? area.name : ''} ${id}`.toLowerCase().includes(f)) continue;
     rows.push({ kind: 'entity', key: `e:${id}`, id, ids: [id], name, area: area ? area.name : '' });
   }
-  return byLetter(rows);
+  return byLetter(rows, langOf(hass));
 }
 
 // The Start screen a home gets when nobody has laid one out: the date and
@@ -451,9 +471,12 @@ export const tileKey = (spec) => spec.key || [spec.type || '', spec.entity || ''
 
 // --- the A-Z list -----------------------------------------------------------
 
-export function letterOf(name) {
-  const c = name.trim()[0] ? name.trim()[0].toLowerCase() : '#';
-  return c >= 'a' && c <= 'z' ? c : '#';
+export function letterOf(name, lang = 'en') {
+  const c = (String(name).trim()[0] || '').toLowerCase();
+  if (c >= 'a' && c <= 'z') return c;
+  if (c && (EXTRA_LETTERS[lang] || '').includes(c)) return c;
+  const base = c.normalize('NFD')[0] || '';
+  return base >= 'a' && base <= 'z' ? base : '#';
 }
 
 // What the A-Z list may show: things, not weather or calendars (they have tiles).
@@ -467,16 +490,17 @@ export function allList(hass, filter = '') {
       return { kind: 'entity', key: `e:${id}`, id, ids: [id], name: nameOf(hass, id), area: area ? area.name : '' };
     })
     .filter((r) => !f || r.name.toLowerCase().includes(f) || r.area.toLowerCase().includes(f) || r.id.includes(f));
-  return byLetter(rows);
+  return byLetter(rows, langOf(hass));
 }
 
-function byLetter(rows) {
-  rows.sort((a, b) => byName(a.name, b.name));
+function byLetter(rows, lang) {
+  rows.sort((a, b) => byName(a.name, b.name, lang));
   const letters = new Map();
   for (const r of rows) {
-    const l = letterOf(r.name);
+    const l = letterOf(r.name, lang);
     if (!letters.has(l)) letters.set(l, []);
     letters.get(l).push(r);
   }
-  return [...letters.entries()].sort(([a], [b]) => (a === '#' ? -1 : b === '#' ? 1 : a.localeCompare(b)));
+  const order = ['#', ...alphabet(lang)];
+  return [...letters.entries()].sort(([a], [b]) => order.indexOf(a) - order.indexOf(b));
 }

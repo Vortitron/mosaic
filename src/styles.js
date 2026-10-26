@@ -156,5 +156,24 @@ button { font: inherit; color: inherit; background: none; border: 0; padding: 0;
 .msg .btns button { flex: 1 1 0; border: 2px solid var(--fg); padding: 8px; font-size: 16px; }
 .msg .btns .yes { background: var(--accent); border-color: var(--accent); color: #fff; }
 
+/* --- customising Start ---------------------------------------------------- */
+.editbar { display: none; position: absolute; left: 0; right: 0; bottom: 0; z-index: 6; gap: 10px; background: var(--chrome); padding: 10px var(--pad) calc(10px + env(safe-area-inset-bottom)); }
+.editing .editbar { display: flex; }
+.editbar button { flex: 1 1 0; border: 2px solid var(--fg); padding: 8px; font-size: 16px; }
+.editbar [data-done="save"] { background: var(--accent); border-color: var(--accent); color: #fff; }
+.editing .page.start { padding-bottom: 90px; }
+.editing .tolist { display: none; }
+.editing .tile { transform: scale(0.9); opacity: 0.7; transition: transform 150ms, opacity 150ms; }
+.editing .tile.sel { transform: none; opacity: 1; z-index: 2; overflow: visible; touch-action: none; }
+.ebtn { display: none; position: absolute; z-index: 3; width: 30px; height: 30px; border-radius: 50%; background: var(--fg); color: var(--bg); font-size: 15px; align-items: center; justify-content: center; }
+.editing .tile.sel .ebtn { display: flex; }
+.ebtn.unpin { top: -11px; right: -11px; }
+.ebtn.resize { bottom: -11px; right: -11px; }
+/* Notices rise from the bottom edge, where they cover no menu or title. */
+.toast { position: absolute; bottom: 0; left: 0; right: 0; z-index: 9; background: var(--accent); color: #fff; padding: 12px var(--pad) calc(12px + env(safe-area-inset-bottom)); font-size: 15px; transform: translateY(110%); transition: transform 250ms cubic-bezier(.1,.9,.2,1); pointer-events: none; }
+.toast.on { transform: none; }
+.msg .menu h3 { margin-bottom: 12px; }
+.msg .menu button { display: block; width: 100%; text-align: left; font-size: 20px; font-weight: 350; padding: 10px 0; }
+
 @media (prefers-reduced-motion: reduce) { .overlay, .msg .box { animation: none; } .tile { transition: none; } }
 `;

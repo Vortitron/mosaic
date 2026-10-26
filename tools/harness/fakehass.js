@@ -87,6 +87,7 @@ export function makeFakeHass(onUpdate, { agent = 'anthropic' } = {}) {
     themes: { darkMode: true },
     language: 'en',
     calls, ws, set,
+    dashboard: { strategy: { type: 'custom:mosaic', accent: 'cobalt' } },
     callService: async (domain, service, data) => {
       calls.push({ domain, service, data });
       const id = data.entity_id;
@@ -99,6 +100,12 @@ export function makeFakeHass(onUpdate, { agent = 'anthropic' } = {}) {
     callWS: async (msg) => {
       ws.push(msg);
       if (msg.type === 'assist_pipeline/pipeline/list') return { preferred_pipeline: 'p1', pipelines: [{ id: 'p1', name: 'Home Assistant', conversation_engine: 'conversation.claude' }] };
+      // The dashboard this card sits on: a Mosaic strategy dashboard.
+      if (msg.type === 'lovelace/config') return JSON.parse(JSON.stringify(hass.dashboard));
+      if (msg.type === 'lovelace/config/save') {
+        hass.dashboard = msg.config;
+        return null;
+      }
       if (msg.type === 'conversation/process') {
         await new Promise((r) => setTimeout(r, 600));
         return { conversation_id: 'c1', response: { response_type: 'action_done', speech: { plain: { speech: `I turned on the kitchen island light. (You said: ${msg.text})` } } } };
