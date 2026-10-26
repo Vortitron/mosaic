@@ -6,7 +6,7 @@ A live-tile Start screen for Home Assistant, after Windows Phone 10.
 
 - **Live tiles:** small, medium, wide and large tiles in one accent colour. They flip or peek between faces: a room turns over to its temperature or what's playing, the date to your next event, a camera tile shows its picture.
 - **Rooms are apps:** tap a room tile for a full-screen room with pivots (lights, power, climate, media, security...) that you swipe between. Tapping a name opens Home Assistant's own dialog.
-- **The A–Z list:** swipe left (on a desktop it sits beside the tiles) for everything in the house, with search and a letter jump list.
+- **The A–Z list:** swipe left (on a desktop it sits beside the tiles) for everything in the house, with search and a letter jump list. It lists **devices** (a smart plug is one row, not five sensors; tap it to open it like a room) or every **entity**: switch at the top, and each viewer's choice is remembered.
 - **An assistant where Cortana was:** a tile and the search box talk to your home's Assist agent. If that agent is Claude (the Anthropic integration), the tile says Claude.
 - **No setup:** with no config, Mosaic lays your home out from its floors and areas.
 
@@ -34,6 +34,7 @@ accent: cobalt          # lime green emerald teal cyan cobalt indigo violet pink
                         # crimson red orange amber yellow brown olive steel mauve taupe, or '#rrggbb'
 theme: auto             # dark | light | auto (follows Home Assistant)
 columns: 6              # small-tile columns on a phone: 6 (three medium tiles across) or 8
+list: devices           # what the A–Z list starts on: devices | entities
 light_colours: false    # true: a lit lamp's tile takes the lamp's colour
 wallpaper: /local/me.jpg  # or an image.* / camera.* entity: seen through the tiles, as on Windows Phone 10
 assistant:              # false hides the assistant

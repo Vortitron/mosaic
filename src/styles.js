@@ -90,6 +90,10 @@ button { font: inherit; color: inherit; background: none; border: 0; padding: 0;
 .tolist .arrow, .back { width: 36px; height: 36px; border: 2px solid currentColor; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; font-size: 18px; line-height: 1; }
 
 /* --- the A-Z list ------------------------------------------------------------ */
+.listmodes { display: flex; gap: 18px; margin: 0 0 10px; }
+.listmodes button { font-size: 24px; font-weight: 300; text-transform: lowercase; color: var(--fg2); }
+.listmodes button.on { color: var(--fg); }
+.apptitle small { display: block; font-size: 12px; font-weight: 400; letter-spacing: 0; text-transform: none; color: var(--fg2); }
 .search { width: 100%; font: inherit; font-size: 16px; padding: 8px 10px; border: 2px solid var(--line); background: var(--bg); color: var(--fg); outline: none; margin: 2px 0 14px; }
 .search:focus { border-color: var(--accent); }
 .letter { display: flex; align-items: flex-end; width: 44px; height: 44px; padding: 0 0 4px 6px; margin: 14px 0 8px; border: 2px solid var(--accent); color: var(--fg); font-size: 22px; font-weight: 350; line-height: 1; }

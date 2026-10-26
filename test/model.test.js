@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { makeFakeHass } from '../tools/harness/fakehass.js';
-import { allList, autoGroups, looksImportant, nextEvent, roomPivots, serviceFor, shortName, tapAction, tileModel, accentColour } from '../src/model.js';
+import { allList, autoGroups, deviceList, primaryEntity, pivotsFor, looksImportant, nextEvent, roomPivots, serviceFor, shortName, tapAction, tileModel, accentColour } from '../src/model.js';
 import { agentName, Conversation } from '../src/assistant.js';
 
 const hass = makeFakeHass();
@@ -33,7 +33,7 @@ test('a room tile counts lit lamps and carries the temperature on its back', () 
 });
 
 test('room pivots leave out diagnostics and empty pivots', () => {
-  assert.deepEqual(roomPivots(hass, 'kitchen').map(([p, ids]) => [p, ids.length]), [['lights', 2], ['power', 1], ['climate', 2]]);
+  assert.deepEqual(roomPivots(hass, 'kitchen').map(([p, ids]) => [p, ids.length]), [['lights', 2], ['power', 1], ['climate', 2], ['sensors', 2]]);
   assert.equal(shortName(hass, 'light.kitchen_ceiling', hass.areas.kitchen), 'Ceiling');
 });
 
@@ -92,4 +92,31 @@ test('a conversation keeps its id and says when it cannot reach the agent', asyn
   await c.ask(broken, { agentId: null }, 'again');
   assert.match(c.turns.at(-1).text, /could not reach/);
   assert.match(c.last, /kitchen island/); // an error is never "the last answer"
+});
+
+test('the device list: one row per device, its main entity in front, loose entities on their own', () => {
+  const rows = deviceList(hass).flatMap(([, r]) => r);
+  const kettle = rows.find((r) => r.device === 'kettle_plug');
+  assert.equal(kettle.name, 'Kettle');
+  assert.equal(kettle.id, 'switch.kettle'); // named after the device, so it is the main one
+  assert.equal(kettle.area, 'Kitchen'); // from the device, the entities have none of their own
+  assert.deepEqual([...kettle.ids].sort(), ['sensor.kettle_energy', 'sensor.kettle_power', 'switch.kettle']); // no diagnostics
+  const climate = rows.find((r) => r.device === 'kitchen_climate');
+  assert.equal(climate.id, 'sensor.kitchen_temperature'); // none named after it: the first of the best-ranked domain
+  assert.ok(rows.some((r) => r.kind === 'entity' && r.id === 'light.desk'));
+  assert.ok(!rows.some((r) => r.id === 'switch.kettle' && r.kind === 'entity'));
+  // Fewer rows than entities: that is the point.
+  assert.ok(rows.length < allList(hass).flatMap(([, r]) => r).length);
+});
+
+test('searching devices finds them by what is inside', () => {
+  const rows = deviceList(hass, 'energy').flatMap(([, r]) => r);
+  assert.deepEqual(rows.map((r) => r.device), ['kettle_plug']);
+});
+
+test('a device opens with its own pivots', () => {
+  const kettle = deviceList(hass).flatMap(([, r]) => r).find((r) => r.device === 'kettle_plug');
+  assert.deepEqual(pivotsFor(hass, kettle.ids).map(([p]) => p), ['power', 'sensors']);
+  assert.equal(shortName(hass, 'sensor.kettle_power', hass.devices.kettle_plug), 'Power');
+  assert.equal(primaryEntity(hass, ['sensor.kettle_power', 'switch.kettle'], { name: 'Something else' }), 'switch.kettle');
 });

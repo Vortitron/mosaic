@@ -4,6 +4,7 @@
 // accent: cobalt          # a Windows Phone accent name, or '#rrggbb'
 // theme: auto             # dark | light | auto (follows Home Assistant)
 // columns: 6              # small-tile columns on a phone (6 or 8)
+// list: devices           # what the A-Z list starts on: devices | entities (each viewer can switch)
 // light_colours: false    # true: a lit lamp's tile takes the lamp's colour
 // wallpaper: /local/me.jpg  # or camera.x / image.x: seen through the tiles, as on Windows Phone 10
 // assistant:              # false hides it
@@ -20,12 +21,12 @@
 import { CSS as STYLES } from './styles.js';
 import { installFonts } from './fonts.js';
 import {
-  ACCENTS, accentColour, allList, autoGroups, canToggle, domainOf, nameOf, roomPivots,
-  serviceFor, shortName, spanOf, stateText, tapAction, tileKey, tileModel,
+  ACCENTS, accentColour, allList, autoGroups, canToggle, deviceList, deviceName, domainOf, entitiesByArea,
+  nameOf, pivotsFor, serviceFor, shortName, spanOf, stateText, tapAction, tileKey, tileModel,
 } from './model.js';
 import { Conversation, resolveAgent } from './assistant.js';
 
-const VERSION = '0.2.0';
+const VERSION = '0.3.0';
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
 const reduced = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
 const ON = ['on', 'open', 'opening', 'unlocked', 'playing', 'home', 'heat', 'cool', 'heat_cool', 'auto', 'cleaning'];
@@ -113,6 +114,7 @@ class MosaicStart extends HTMLElement {
 
   disconnectedCallback() {
     if (this._ro) this._ro.disconnect();
+    if (this._io) this._io.disconnect();
     clearInterval(this._tick);
     clearInterval(this._minute);
     window.removeEventListener('keydown', this._onKey);
@@ -156,6 +158,9 @@ class MosaicStart extends HTMLElement {
             <button class="tolist" aria-label="all things">all <span class="arrow">&rarr;</span></button>
           </div>
           <div class="page list">
+            <div class="listmodes" role="tablist" aria-label="list">
+              <button role="tab" data-mode="devices">devices</button><button role="tab" data-mode="entities">entities</button>
+            </div>
             <input class="search" type="search" placeholder="search" aria-label="search" value="${esc(this._filter)}">
             <div class="listbody"></div>
           </div>
@@ -172,14 +177,26 @@ class MosaicStart extends HTMLElement {
     const search = root.querySelector('.search');
     search.addEventListener('input', () => {
       this._filter = search.value;
-      this._listSig = null;
       this._renderList();
     });
     search.addEventListener('keydown', (e) => {
       if (e.key === 'Enter' && this._filter.trim() && this._config.assistant !== false) this._openAssist(this._filter.trim());
     });
     root.querySelector('.listbody').addEventListener('click', (e) => this._listClick(e));
-    this._listSig = null;
+    for (const b of root.querySelectorAll('.listmodes button')) b.addEventListener('click', () => this._setListMode(b.dataset.mode));
+    // The list is long on a real home: it is only kept up to date while it is
+    // on screen (on a phone it is a swipe away).
+    if (this._io) this._io.disconnect();
+    this._listVisible = true;
+    this._listRows = null;
+    if ('IntersectionObserver' in window) {
+      this._io = new IntersectionObserver((entries) => {
+        this._listVisible = entries.some((e) => e.isIntersecting);
+        if (this._listVisible) this._renderList();
+      }, { root: root.querySelector('.pan'), threshold: 0.01 });
+      this._io.observe(root.querySelector('.page.list'));
+    }
+    this._setListMode(this._listMode(), false);
     this._wallpaper();
     this._fit();
     this._refresh();
@@ -273,7 +290,7 @@ class MosaicStart extends HTMLElement {
       this._paintTile(t);
     }
     this._renderList();
-    if (this._overlay && this._overlay.kind === 'room') this._renderRoom();
+    if (this._overlay && (this._overlay.kind === 'room' || this._overlay.kind === 'device')) this._renderApp();
   }
 
   _paintTile(t) {
@@ -419,7 +436,7 @@ class MosaicStart extends HTMLElement {
   _tap(t) {
     if (!t || !t.model) return;
     const a = t.model.tap;
-    if (a.action === 'room') return this._openRoom(a.area);
+    if (a.action === 'room') return this._openApp({ kind: 'room', area: a.area });
     if (a.action === 'assistant') return this._openAssist();
     if (a.action === 'more-info') return this._moreInfo(a.entity);
     if (a.action === 'none') return;
@@ -430,7 +447,7 @@ class MosaicStart extends HTMLElement {
     if (!t || !t.model) return;
     const id = t.model.entity || (t.model.tap && t.model.tap.entity);
     if (id) this._moreInfo(id);
-    else if (t.model.tap.action === 'room') this._openRoom(t.model.tap.area);
+    else if (t.model.tap.action === 'room') this._openApp({ kind: 'room', area: t.model.tap.area });
   }
 
   _act(action, id) {
@@ -472,7 +489,7 @@ class MosaicStart extends HTMLElement {
     this._layer().innerHTML = '';
     if (prev) {
       // A question asked from inside a room goes back to the room.
-      if (prev.kind === 'room') this._openRoom(prev.area);
+      if (prev.kind === 'room' || prev.kind === 'device') this._openApp(prev);
       else if (prev.kind === 'assist') this._openAssist();
     }
   }
@@ -501,14 +518,29 @@ class MosaicStart extends HTMLElement {
     div.querySelector('.yes').focus();
   }
 
-  _openRoom(areaId) {
-    const area = this._hass.areas && this._hass.areas[areaId];
-    if (!area) return;
-    this._overlay = { kind: 'room', area: areaId, pivot: 0 };
-    const pivots = roomPivots(this._hass, areaId);
+  // A room or a device, opened like a Windows Phone app: its title small at
+  // the top, pivots underneath, one swipeable page per pivot.
+  _appParts(spec) {
+    const hass = this._hass;
+    if (spec.kind === 'room') {
+      const area = hass.areas && hass.areas[spec.area];
+      return area && { title: area.name, within: area, ids: entitiesByArea(hass).get(spec.area) || [] };
+    }
+    const dev = hass.devices && hass.devices[spec.device];
+    if (!dev) return null;
+    const row = deviceList(hass).flatMap(([, rows]) => rows).find((r) => r.device === spec.device);
+    const sub = [dev.manufacturer, dev.model].filter(Boolean).join(' ');
+    return { title: deviceName(dev), within: dev, ids: row ? row.ids : [], sub };
+  }
+
+  _openApp(spec) {
+    const parts = this._appParts(spec);
+    if (!parts) return;
+    this._overlay = { kind: spec.kind, area: spec.area, device: spec.device };
+    const pivots = pivotsFor(this._hass, parts.ids);
     const layer = this._layer();
-    layer.innerHTML = `<div class="overlay app ${this.shadowRoot.querySelector('.root').classList.contains('desk') ? 'wideapp' : ''}" role="dialog" aria-label="${esc(area.name)}">
-      <div class="apptitle"><button class="back" aria-label="back">&larr;</button>${esc(area.name)}</div>
+    layer.innerHTML = `<div class="overlay app ${this.shadowRoot.querySelector('.root').classList.contains('desk') ? 'wideapp' : ''}" role="dialog" aria-label="${esc(parts.title)}">
+      <div class="apptitle"><button class="back" aria-label="back">&larr;</button><span>${esc(parts.title)}${parts.sub ? `<small>${esc(parts.sub)}</small>` : ''}</span></div>
       <div class="pivots" role="tablist">${pivots.map(([p], i) => `<button role="tab" data-i="${i}" class="${i ? '' : 'on'}">${esc(p)}</button>`).join('')}</div>
       <div class="ppages">${pivots.map(([p], i) => `<div class="ppage" data-i="${i}" data-pivot="${esc(p)}"></div>`).join('') || '<div class="ppage"><div class="empty">nothing here yet</div></div>'}</div>
     </div>`;
@@ -523,27 +555,26 @@ class MosaicStart extends HTMLElement {
       if (heads[i]) heads[i].scrollIntoView({ block: 'nearest', inline: 'nearest' });
     });
     pages.addEventListener('click', (e) => this._roomClick(e));
-    this._roomSig = null;
-    this._renderRoom();
+    this._renderApp();
   }
 
-  _renderRoom() {
+  _renderApp() {
     const o = this._overlay;
     const app = this._layer().querySelector('.app');
-    if (!o || o.kind !== 'room' || !app) return;
-    const hass = this._hass;
-    const area = hass.areas[o.area];
-    const pivots = roomPivots(hass, o.area);
+    if (!o || !app) return;
+    const parts = this._appParts(o);
+    if (!parts) return;
+    const pivots = pivotsFor(this._hass, parts.ids);
     for (const page of app.querySelectorAll('.ppage[data-pivot]')) {
       const ids = (pivots.find(([p]) => p === page.dataset.pivot) || [null, []])[1];
-      const html = ids.map((id) => this._roomRow(id, area)).join('');
+      const html = ids.map((id) => this._roomRow(id, parts.within)).join('');
       if (page.dataset.html === html) continue;
       page.dataset.html = html;
       page.innerHTML = html;
     }
   }
 
-  _roomRow(id, area) {
+  _roomRow(id, within) {
     const hass = this._hass;
     const st = hass.states[id];
     const d = domainOf(id);
@@ -557,7 +588,7 @@ class MosaicStart extends HTMLElement {
     let sub = stateText(hass, id);
     if (d === 'light' && on && st.attributes.brightness) sub += ` · ${Math.round((st.attributes.brightness / 255) * 100)}%`;
     if (d === 'media_player' && st.attributes.media_title) sub += ` · ${st.attributes.media_title}`;
-    return `${pic}<div class="row" data-entity="${esc(id)}"><span class="rname"><span>${esc(shortName(hass, id, area))}</span><small>${esc(sub)}</small></span>${control}</div>`;
+    return `${pic}<div class="row" data-entity="${esc(id)}"><span class="rname"><span>${esc(shortName(hass, id, within))}</span><small>${esc(sub)}</small></span>${control}</div>`;
   }
 
   _roomClick(e) {
@@ -569,26 +600,93 @@ class MosaicStart extends HTMLElement {
     else this._moreInfo(id);
   }
 
+  _listMode() {
+    try {
+      const m = localStorage.getItem('mosaic.list');
+      if (m === 'devices' || m === 'entities') return m;
+    } catch (e) {
+      /* private window: fall back to the card's setting */
+    }
+    return this._config.list === 'entities' ? 'entities' : 'devices';
+  }
+
+  _setListMode(mode, remember = true) {
+    this._mode = mode;
+    if (remember) {
+      try {
+        localStorage.setItem('mosaic.list', mode);
+      } catch (e) {
+        /* fine: it just won't be remembered */
+      }
+    }
+    for (const b of this.shadowRoot.querySelectorAll('.listmodes button')) {
+      b.classList.toggle('on', b.dataset.mode === mode);
+      b.setAttribute('aria-selected', String(b.dataset.mode === mode));
+    }
+    this._listRows = null;
+    this._renderList();
+  }
+
+  _listGroups() {
+    return this._mode === 'entities' ? allList(this._hass, this._filter) : deviceList(this._hass, this._filter);
+  }
+
+  _listRow(r) {
+    const hass = this._hass;
+    const st = hass.states[r.id];
+    const off = st && ON.includes(st.state) ? '' : 'off';
+    if (r.kind === 'device') {
+      const more = r.ids.length > 1 ? `${r.ids.length} things` : '';
+      const sub = [r.area, stateText(hass, r.id), more].filter(Boolean).join(' · ');
+      const action = tapAction(hass, r.id).action;
+      const control = canToggle(hass, r.id) && action !== 'play_pause'
+        ? `<button class="toggle ${off ? '' : 'on'}" role="switch" aria-checked="${!off}" aria-label="${esc(r.name)}" data-act="${action}" data-entity="${esc(r.id)}"></button>` : '';
+      return `<div class="row" data-device="${esc(r.device)}"><span class="ricon ${off}"><ha-state-icon data-entity="${esc(r.id)}"></ha-state-icon></span><span class="rname"><span>${esc(r.name)}</span><small>${esc(sub)}</small></span>${control}</div>`;
+    }
+    const sub = [r.area, stateText(hass, r.id)].filter(Boolean).join(' · ');
+    return `<div class="row" data-entity="${esc(r.id)}"><span class="ricon ${off}"><ha-state-icon data-entity="${esc(r.id)}"></ha-state-icon></span><span class="rname"><span>${esc(r.name)}</span><small>${esc(sub)}</small></span></div>`;
+  }
+
+  // Rows are keyed, so a sensor ticking over repaints its own row and nothing
+  // else; only a change in what is listed rebuilds the lot.
   _renderList() {
     const body = this.shadowRoot.querySelector('.listbody');
-    if (!body) return;
-    const hass = this._hass;
-    const groups = allList(hass, this._filter);
-    const sig = JSON.stringify(groups.map(([l, rows]) => [l, rows.map((r) => [r.id, r.name, r.area, hass.states[r.id].state, hass.states[r.id].last_updated])])) + (this._agent ? this._agent.name : '');
-    if (sig === this._listSig) return;
-    this._listSig = sig;
+    if (!body || !this._hass) return;
+    if (!this._listVisible && this._listRows) return;
+    const groups = this._listGroups();
+    const items = [];
+    for (const [l, rows] of groups) {
+      items.push({ key: `L:${l}`, html: `<button class="letter" data-letter="${esc(l)}" aria-label="jump to a letter">${esc(l)}</button>` });
+      for (const r of rows) items.push({ key: r.key, html: this._listRow(r), id: r.id });
+    }
     const q = this._filter.trim();
-    const askRow = q && this._config.assistant !== false && this._agent
-      ? `<div class="row askrow" data-ask="${esc(q)}"><span class="ricon">${ringSvg()}</span><span class="rname"><span>ask ${esc(this._agent.name)}</span><small>"${esc(q)}"</small></span></div>` : '';
-    body.innerHTML = groups.map(([l, rows]) => `<button class="letter" data-letter="${esc(l)}" aria-label="jump to a letter">${esc(l)}</button>${rows
-      .map((r) => {
-        const st = hass.states[r.id];
-        const off = !ON.includes(st.state) ? 'off' : '';
-        const sub = [r.area, stateText(hass, r.id)].filter(Boolean).join(' · ');
-        return `<div class="row" data-entity="${esc(r.id)}"><span class="ricon ${off}"><ha-state-icon data-entity="${esc(r.id)}"></ha-state-icon></span><span class="rname"><span>${esc(r.name)}</span><small>${esc(sub)}</small></span></div>`;
-      })
-      .join('')}`).join('') + (askRow || (groups.length ? '' : '<div class="empty">nothing by that name</div>'));
-    this._hydrate(body);
+    if (q && this._config.assistant !== false && this._agent) {
+      items.push({ key: `ask:${q}`, html: `<div class="row askrow" data-ask="${esc(q)}"><span class="ricon">${ringSvg()}</span><span class="rname"><span>ask ${esc(this._agent.name)}</span><small>"${esc(q)}"</small></span></div>` });
+    } else if (!groups.length) items.push({ key: 'empty', html: '<div class="empty">nothing by that name</div>' });
+    const prev = this._listRows;
+    const sameKeys = prev && prev.length === items.length && prev.every((p, i) => p.key === items[i].key);
+    if (!sameKeys) {
+      body.innerHTML = items.map((it) => it.html).join('');
+      items.forEach((it, i) => (it.el = body.children[i]));
+      this._hydrate(body);
+    } else {
+      items.forEach((it, i) => {
+        it.el = prev[i].el;
+        if (prev[i].html === it.html) {
+          // Same words, but the icon can still change with the state.
+          if (it.id && prev[i].state !== this._hass.states[it.id]) this._hydrate(it.el);
+          return;
+        }
+        const tmp = document.createElement('div');
+        tmp.innerHTML = it.html;
+        const fresh = tmp.firstElementChild;
+        it.el.replaceWith(fresh);
+        it.el = fresh;
+        this._hydrate(fresh);
+      });
+    }
+    for (const it of items) it.state = it.id ? this._hass.states[it.id] : null;
+    this._listRows = items;
   }
 
   _listClick(e) {
@@ -596,13 +694,17 @@ class MosaicStart extends HTMLElement {
     if (letter) return this._openJump();
     const ask = e.target.closest('[data-ask]');
     if (ask) return this._openAssist(ask.dataset.ask);
+    const btn = e.target.closest('[data-act]');
+    if (btn) return this._act(btn.dataset.act, btn.dataset.entity);
     const row = e.target.closest('.row');
-    if (row) this._moreInfo(row.dataset.entity);
+    if (!row) return;
+    if (row.dataset.device) this._openApp({ kind: 'device', device: row.dataset.device });
+    else this._moreInfo(row.dataset.entity);
   }
 
   // The jump list: every letter, the ones with nothing under them greyed out.
   _openJump() {
-    const have = new Set(allList(this._hass, this._filter).map(([l]) => l));
+    const have = new Set(this._listGroups().map(([l]) => l));
     this._overlay = { kind: 'jump' };
     const letters = ['#', ...'abcdefghijklmnopqrstuvwxyz'];
     this._layer().innerHTML = `<div class="overlay jump" role="dialog" aria-label="jump to a letter"><div class="letters">${letters.map((l) => `<button data-l="${l}" ${have.has(l) ? '' : 'disabled'}>${l}</button>`).join('')}</div></div>`;

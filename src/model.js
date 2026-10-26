@@ -4,6 +4,11 @@
 
 export const domainOf = (id) => String(id).split('.')[0];
 
+// One collator for every A-Z sort: localeCompare with options builds one per
+// call, which is most of the cost of sorting a few thousand names.
+const collator = new Intl.Collator(undefined, { sensitivity: 'base' });
+const byName = (a, b) => collator.compare(a, b);
+
 const SIZES = { small: [1, 1], medium: [2, 2], wide: [4, 2], large: [4, 4] };
 export const spanOf = (size) => SIZES[size] || SIZES.medium;
 
@@ -86,11 +91,13 @@ export function areaOf(hass, id) {
   return (areaId && hass.areas && hass.areas[areaId]) || null;
 }
 
-// "Kitchen Ceiling" inside the kitchen is just "Ceiling".
-export function shortName(hass, id, area) {
+// "Kitchen Ceiling" inside the kitchen is just "Ceiling"; "Kettle Plug Power"
+// inside the Kettle Plug is just "Power". `within` is an area or a device.
+export function shortName(hass, id, within) {
   const name = nameOf(hass, id);
-  if (!area) return name;
-  const a = area.name.toLowerCase();
+  const prefix = within && (within.name_by_user || within.name);
+  if (!prefix) return name;
+  const a = prefix.toLowerCase();
   if (name.toLowerCase().startsWith(a + ' ') && name.length > a.length + 1) {
     const rest = name.slice(a.length + 1);
     return rest[0].toUpperCase() + rest.slice(1);
@@ -119,8 +126,16 @@ export function pivotOf(hass, id) {
   return p ? p[0] : 'other';
 }
 
+// Worked out once per state update, not once per tile: on a home with
+// thousands of entities that is the difference that matters. hass.states is
+// a new object whenever anything changes, so it is the cache key.
+const byAreaCache = new WeakMap();
+const deviceCache = new WeakMap();
+
 // Everything worth showing, grouped by area id ('' = no area).
 export function entitiesByArea(hass) {
+  const hit = byAreaCache.get(hass.states);
+  if (hit && hit.areas === hass.areas && hit.entities === hass.entities) return hit.value;
   const out = new Map();
   for (const id of Object.keys(hass.states)) {
     if (!isUseful(hass, id)) continue;
@@ -129,14 +144,78 @@ export function entitiesByArea(hass) {
     if (!out.has(key)) out.set(key, []);
     out.get(key).push(id);
   }
-  for (const ids of out.values()) ids.sort((a, b) => nameOf(hass, a).localeCompare(nameOf(hass, b)));
+  for (const ids of out.values()) ids.sort((a, b) => byName(nameOf(hass, a), nameOf(hass, b)));
+  byAreaCache.set(hass.states, { areas: hass.areas, entities: hass.entities, value: out });
   return out;
 }
 
-// The pivots of one room: [[pivot, [ids]]], only the ones with something in.
-export function roomPivots(hass, areaId) {
-  const ids = entitiesByArea(hass).get(areaId) || [];
+// Pivots for a set of entities: [[pivot, [ids]]], only the ones with something in.
+export function pivotsFor(hass, ids) {
   return PIVOTS.map(([p]) => [p, ids.filter((id) => pivotOf(hass, id) === p)]).filter(([, l]) => l.length);
+}
+export const roomPivots = (hass, areaId) => pivotsFor(hass, entitiesByArea(hass).get(areaId) || []);
+
+// --- devices ------------------------------------------------------------------
+
+export const deviceName = (dev) => (dev && (dev.name_by_user || dev.name)) || '';
+const PRIMARY_ORDER = ['light', 'switch', 'fan', 'cover', 'lock', 'climate', 'media_player', 'vacuum', 'lawn_mower', 'humidifier', 'water_heater', 'alarm_control_panel', 'valve', 'camera', 'binary_sensor', 'sensor', 'person', 'button', 'scene', 'script', 'input_boolean', 'input_button'];
+
+// The entity that stands for a device: the one named after it (Home
+// Assistant's "main" entity has no name of its own), else the most
+// controllable one.
+export function primaryEntity(hass, ids, dev) {
+  const name = deviceName(dev).toLowerCase();
+  const own = name && ids.find((id) => nameOf(hass, id).toLowerCase() === name);
+  if (own) return own;
+  const rank = (id) => {
+    const r = PRIMARY_ORDER.indexOf(domainOf(id));
+    return r < 0 ? 99 : r;
+  };
+  return [...ids].sort((a, b) => rank(a) - rank(b))[0];
+}
+
+// The device list: one row per device that has something worth showing, plus
+// a row for each entity that belongs to no device (helpers, templates, people).
+// Search matches the device, its room, or anything in it.
+export function deviceList(hass, filter = '') {
+  let per = deviceCache.get(hass.states);
+  if (!per || per.devices !== hass.devices || per.entities !== hass.entities) {
+    per = { devices: hass.devices, entities: hass.entities, byFilter: new Map() };
+    deviceCache.set(hass.states, per);
+  }
+  if (!per.byFilter.has(filter)) per.byFilter.set(filter, buildDeviceList(hass, filter));
+  return per.byFilter.get(filter);
+}
+
+function buildDeviceList(hass, filter) {
+  const f = filter.trim().toLowerCase();
+  const byDevice = new Map();
+  const loose = [];
+  for (const id of listable(hass)) {
+    const entry = hass.entities && hass.entities[id];
+    const dev = entry && entry.device_id && hass.devices && hass.devices[entry.device_id];
+    if (!dev) loose.push(id);
+    else {
+      if (!byDevice.has(dev.id)) byDevice.set(dev.id, []);
+      byDevice.get(dev.id).push(id);
+    }
+  }
+  const rows = [];
+  for (const [devId, ids] of byDevice) {
+    const dev = hass.devices[devId];
+    const area = (dev.area_id && hass.areas && hass.areas[dev.area_id]) || areaOf(hass, ids[0]);
+    const name = deviceName(dev) || nameOf(hass, ids[0]);
+    const hay = [name, area ? area.name : '', ...ids.map((id) => nameOf(hass, id))].join(' ').toLowerCase();
+    if (f && !hay.includes(f)) continue;
+    rows.push({ kind: 'device', key: `d:${devId}`, device: devId, id: primaryEntity(hass, ids, dev), ids, name, area: area ? area.name : '' });
+  }
+  for (const id of loose) {
+    const area = areaOf(hass, id);
+    const name = nameOf(hass, id);
+    if (f && !`${name} ${area ? area.name : ''} ${id}`.toLowerCase().includes(f)) continue;
+    rows.push({ kind: 'entity', key: `e:${id}`, id, ids: [id], name, area: area ? area.name : '' });
+  }
+  return byLetter(rows);
 }
 
 // The Start screen a home gets when nobody has laid one out: the date and
@@ -157,12 +236,12 @@ export function autoGroups(hass, { assistant = true } = {}) {
   const areas = Object.values(hass.areas || {}).filter((a) => (by.get(a.area_id) || []).length);
   const floors = Object.values(hass.floors || {}).sort((a, b) => (a.level ?? 0) - (b.level ?? 0));
   const roomTile = (a) => ({ area: a.area_id, size: (by.get(a.area_id) || []).some((id) => domainOf(id) === 'camera') ? 'wide' : 'medium' });
-  const byName = (a, b) => a.name.localeCompare(b.name);
+  const byAreaName = (a, b) => byName(a.name, b.name);
   for (const f of floors) {
-    const here = areas.filter((a) => a.floor_id === f.floor_id).sort(byName);
+    const here = areas.filter((a) => a.floor_id === f.floor_id).sort(byAreaName);
     if (here.length) groups.push({ name: f.name, tiles: here.map(roomTile) });
   }
-  const loose = areas.filter((a) => !a.floor_id || !floors.some((f) => f.floor_id === a.floor_id)).sort(byName);
+  const loose = areas.filter((a) => !a.floor_id || !floors.some((f) => f.floor_id === a.floor_id)).sort(byAreaName);
   if (loose.length) groups.push({ name: floors.length ? 'other rooms' : 'rooms', tiles: loose.map(roomTile) });
   return groups;
 }
@@ -377,16 +456,22 @@ export function letterOf(name) {
   return c >= 'a' && c <= 'z' ? c : '#';
 }
 
+// What the A-Z list may show: things, not weather or calendars (they have tiles).
+const listable = (hass) => Object.keys(hass.states).filter((id) => isUseful(hass, id) && !['weather', 'calendar', 'todo'].includes(domainOf(id)));
+
 export function allList(hass, filter = '') {
   const f = filter.trim().toLowerCase();
-  const ids = Object.keys(hass.states).filter((id) => isUseful(hass, id) && !['weather', 'calendar', 'todo'].includes(domainOf(id)));
-  const rows = ids
+  const rows = listable(hass)
     .map((id) => {
       const area = areaOf(hass, id);
-      return { id, name: nameOf(hass, id), area: area ? area.name : '' };
+      return { kind: 'entity', key: `e:${id}`, id, ids: [id], name: nameOf(hass, id), area: area ? area.name : '' };
     })
-    .filter((r) => !f || r.name.toLowerCase().includes(f) || r.area.toLowerCase().includes(f) || r.id.includes(f))
-    .sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }));
+    .filter((r) => !f || r.name.toLowerCase().includes(f) || r.area.toLowerCase().includes(f) || r.id.includes(f));
+  return byLetter(rows);
+}
+
+function byLetter(rows) {
+  rows.sort((a, b) => byName(a.name, b.name));
   const letters = new Map();
   for (const r of rows) {
     const l = letterOf(r.name);

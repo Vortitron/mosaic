@@ -19,6 +19,11 @@ export function makeFakeHass(onUpdate, { agent = 'anthropic' } = {}) {
     states[id] = { entity_id: id, state, attributes, last_changed: old, last_updated: old };
     entities[id] = { entity_id: id, area_id: areaId || null, device_id: null, platform: 'demo', ...extra };
   };
+  // A device owns entities; they take its room unless they have their own.
+  const device = (id, name, areaId, ids, more = {}) => {
+    devices[id] = { id, name, name_by_user: null, area_id: areaId, manufacturer: more.manufacturer || null, model: more.model || null };
+    for (const e of ids) entities[e] = { ...entities[e], device_id: id, area_id: null };
+  };
   const light = (id, name, a, on, b = 255) => add(`light.${id}`, on ? 'on' : 'off', { friendly_name: name, brightness: on ? b : null }, a);
   light('hallway', 'Hallway Light', 'hallway', true);
   light('kitchen_ceiling', 'Kitchen Ceiling', 'kitchen', true, 200);
@@ -29,6 +34,9 @@ export function makeFakeHass(onUpdate, { agent = 'anthropic' } = {}) {
   light('desk', 'Desk Lamp', 'office', true);
   light('string', 'Garden String Lights', 'garden', false);
   add('switch.kettle', 'off', { friendly_name: 'Kettle' }, 'kitchen');
+  add('sensor.kettle_power', '0', { friendly_name: 'Kettle Power', device_class: 'power', unit_of_measurement: 'W' }, 'kitchen');
+  add('sensor.kettle_energy', '12.5', { friendly_name: 'Kettle Energy', device_class: 'energy', unit_of_measurement: 'kWh' }, 'kitchen');
+  add('sensor.kettle_signal', '-61', { friendly_name: 'Kettle Signal strength', unit_of_measurement: 'dBm' }, 'kitchen', { entity_category: 'diagnostic' });
   add('switch.server_rack', 'on', { friendly_name: 'Server Rack' }, 'comms');
   add('switch.monitor', 'on', { friendly_name: 'Monitor' }, 'office');
   add('sensor.kitchen_temperature', '21.4', { friendly_name: 'Kitchen Temperature', device_class: 'temperature', unit_of_measurement: '°C' }, 'kitchen');
@@ -55,6 +63,11 @@ export function makeFakeHass(onUpdate, { agent = 'anthropic' } = {}) {
   add('automation.night', 'on', { friendly_name: 'Night mode' }, null);
   add('conversation.claude', 'unknown', { friendly_name: 'Claude conversation' }, null, { platform: agent });
 
+  // Devices as Home Assistant has them: the plug's main entity has no name of
+  // its own, so its friendly name is the device's.
+  device('kettle_plug', 'Kettle', 'kitchen', ['switch.kettle', 'sensor.kettle_power', 'sensor.kettle_energy', 'sensor.kettle_signal'], { manufacturer: 'Shelly', model: 'Plug S' });
+  device('kitchen_climate', 'Kitchen Climate', 'kitchen', ['sensor.kitchen_temperature', 'sensor.kitchen_humidity', 'sensor.kitchen_debug'], { manufacturer: 'Aqara' });
+  device('bedroom_tv', 'Bedroom TV', 'bedroom', ['media_player.bedroom']);
   const calls = [];
   const ws = [];
   let hass;
