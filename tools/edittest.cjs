@@ -57,6 +57,41 @@ const SP = process.env.SP || '/tmp';
   assert.equal(await page.evaluate(() => !!window.card._edit), false);
   console.log('saved groups:', saved.strategy.groups.map((g) => `${g.name || '(top)'}: ${g.tiles.map((t) => (t.area || t.entity || t.type) + '/' + (t.size || 'medium')).join(' ')}`).join(' | '));
 
+  // A new group: add it, name it, drag the clock into it.
+  await page.evaluate(() => window.card._hold(window.card._tiles.get('0.0')));
+  await page.waitForTimeout(400);
+  await page.evaluate(() => window.card.shadowRoot.querySelector('.addgroup').click());
+  await page.keyboard.type('Mornings');
+  const ng = await page.evaluate(() => window.card._edit.groups.length - 1);
+  // The new group is far below the clock: hold the drag at the bottom edge
+  // and let Start scroll until the group comes into view.
+  await page.evaluate(() => { window.card.shadowRoot.querySelector('.page.start').scrollTop = 0; });
+  [x, y] = await centre('0.0');
+  await page.mouse.move(x, y);
+  await page.mouse.down();
+  await page.mouse.move(x + 15, y + 15, { steps: 3 });
+  await page.mouse.move(60, 830, { steps: 10 });
+  let drop = null;
+  for (let i = 0; i < 80 && !drop; i++) {
+    await page.waitForTimeout(50);
+    drop = await page.evaluate((g) => { const el = window.card.shadowRoot.querySelector(`.group[data-g="${g}"] .grid`); const r = el.getBoundingClientRect(); return r.top > 120 && r.bottom < 760 ? [r.x + 30, r.y + r.height / 2] : null; }, ng);
+  }
+  assert.ok(drop, 'Start scrolled the new group into view');
+  // Out of the edge zone so the scrolling stops, then aim at where the group is now.
+  await page.mouse.move(200, 420, { steps: 4 });
+  await page.waitForTimeout(150);
+  drop = await page.evaluate((g) => { const r = window.card.shadowRoot.querySelector(`.group[data-g="${g}"] .grid`).getBoundingClientRect(); return [r.x + 30, r.y + r.height / 2]; }, ng);
+  await page.mouse.move(drop[0], drop[1], { steps: 6 });
+  await page.mouse.up();
+  assert.equal(await page.evaluate(() => String(document.getSelection())), '', 'no text selected by the drag');
+  await page.screenshot({ path: SP + '/e-group.png' });
+  await page.evaluate(() => window.card.shadowRoot.querySelector('.editbar [data-done="save"]').click());
+  await page.waitForTimeout(400);
+  const last = await page.evaluate(() => { const g = window.hass.dashboard.strategy.groups; return g[g.length - 1]; });
+  console.log('new group:', JSON.stringify(last), 'clock is in', JSON.stringify(await page.evaluate(() => window.hass.dashboard.strategy.groups.map((g) => g.name + ':' + g.tiles.map((t) => t.type || t.area || t.entity).join(',')))));
+  assert.equal(last.name, 'Mornings');
+  assert.deepEqual(last.tiles.map((t) => t.type), ['clock']);
+
   // Pin from the list: hold a row, choose "pin to start".
   await page.evaluate(() => window.card.shadowRoot.querySelector('.tolist').click());
   await page.waitForTimeout(800);

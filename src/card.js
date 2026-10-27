@@ -26,8 +26,9 @@ import {
   nameOf, pivotsFor, serviceFor, shortName, spanOf, stateText, tapAction, tileModel,
 } from './model.js';
 import { Conversation, resolveAgent } from './assistant.js';
+import { MosaicStartEditor } from './editor.js';
 
-const VERSION = '0.4.0';
+const VERSION = '0.5.0';
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
 const reduced = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
 const ON = ['on', 'open', 'opening', 'unlocked', 'playing', 'home', 'heat', 'cool', 'heat_cool', 'auto', 'cleaning'];
@@ -57,6 +58,10 @@ function faceHtml(f) {
 class MosaicStart extends HTMLElement {
   static getStubConfig() {
     return { accent: 'cobalt' };
+  }
+
+  static getConfigElement() {
+    return document.createElement('mosaic-start-editor');
   }
 
   constructor() {
@@ -167,6 +172,18 @@ class MosaicStart extends HTMLElement {
     const root = this.shadowRoot;
     this._wireTiles(root.querySelector('.groups'));
     for (const b of root.querySelectorAll('.editbar button')) b.addEventListener('click', () => this._finishEdit(b.dataset.done));
+    const groupsBox = root.querySelector('.groups');
+    groupsBox.addEventListener('input', (e) => {
+      const input = e.target.closest('.gname');
+      if (input && this._edit) this._edit.groups[Number(input.dataset.g)].name = input.value;
+    });
+    groupsBox.addEventListener('click', (e) => {
+      if (!e.target.closest('.addgroup') || !this._edit) return;
+      this._edit.groups.push({ name: '', tiles: [] });
+      this._fillGroups();
+      const inputs = groupsBox.querySelectorAll('.gname');
+      inputs[inputs.length - 1].focus();
+    });
     root.querySelector('.tolist').addEventListener('click', () => {
       const pan = root.querySelector('.pan');
       pan.scrollTo({ left: pan.clientWidth, behavior: reduced() ? 'auto' : 'smooth' });
@@ -210,15 +227,20 @@ class MosaicStart extends HTMLElement {
     if (!this._edit) this._layoutSig = JSON.stringify(groups);
     const sel = this._edit && this._edit.sel;
     const handles = this._edit ? '<button class="ebtn unpin" data-edit="unpin" aria-label="unpin">&#x2715;</button><button class="ebtn resize" data-edit="resize" aria-label="resize">&#x2198;</button>' : '';
+    // While customising, a group's heading is a box to type its name in, and
+    // an empty group is a space to drag tiles into.
+    const heading = (g, gi) => (this._edit
+      ? `<h2><input class="gname" data-g="${gi}" value="${esc(g.name)}" placeholder="name this group" aria-label="group name"></h2>`
+      : `<h2>${esc(g.name)}</h2>`);
     box.innerHTML = groups
-      .map((g, gi) => `<section class="group" data-g="${gi}"><h2>${esc(g.name)}</h2><div class="grid">${g.tiles
+      .map((g, gi) => `<section class="group" data-g="${gi}">${heading(g, gi)}<div class="grid${g.tiles.length ? '' : ' empty'}">${g.tiles
         .map((spec, ti) => {
           const size = ['small', 'medium', 'wide', 'large'].includes(spec.size) ? spec.size : 'medium';
           const key = `${gi}.${ti}`;
           return `<div class="tile ${size}${key === sel ? ' sel' : ''}" role="button" tabindex="0" data-key="${key}"><div class="faces"></div><div class="label"></div><div class="badge"></div>${handles}</div>`;
         })
         .join('')}</div></section>`)
-      .join('');
+      .join('') + (this._edit ? '<button class="addgroup">+ group</button>' : '');
     this._tiles = new Map();
     for (const el of box.querySelectorAll('.tile')) {
       const [gi, ti] = el.dataset.key.split('.').map(Number);
@@ -455,7 +477,28 @@ class MosaicStart extends HTMLElement {
     let start = null;
     let held = false;
     let dragging = false;
+    let last = null;
+    let scroller = null;
     const tileOf = (e) => e.target.closest && e.target.closest('.tile');
+    // Dragging near the top or bottom of Start scrolls it, so a tile can go
+    // to a group that is off screen.
+    const autoscroll = () => {
+      scroller = null;
+      if (!dragging || !last) return;
+      const page = this.shadowRoot.querySelector('.page.start');
+      const r = page.getBoundingClientRect();
+      // The edit bar covers the bottom of the page: its top is the edge.
+      const bar = this.shadowRoot.querySelector('.editbar').getBoundingClientRect();
+      const bottom = Math.min(r.bottom, bar.height ? bar.top : r.bottom);
+      const edge = 70;
+      const dy = last[1] < r.top + edge ? -Math.ceil((r.top + edge - last[1]) / 4) : last[1] > bottom - edge ? Math.ceil((last[1] - (bottom - edge)) / 4) : 0;
+      if (dy) {
+        const before = page.scrollTop;
+        page.scrollTop += dy;
+        if (page.scrollTop !== before) this._dragTo(last[0], last[1]);
+      }
+      scroller = requestAnimationFrame(autoscroll);
+    };
     const cancel = () => {
       clearTimeout(hold);
       for (const el of container.querySelectorAll('.pressed')) el.classList.remove('pressed');
@@ -468,6 +511,7 @@ class MosaicStart extends HTMLElement {
       start = [e.clientX, e.clientY];
       if (this._edit) {
         if (e.target.closest('.ebtn')) return;
+        e.preventDefault(); // no text selection while dragging with a mouse
         if (this._edit.sel !== el.dataset.key) {
           this._edit.sel = el.dataset.key;
           this._fillGroups();
@@ -485,8 +529,12 @@ class MosaicStart extends HTMLElement {
       if (!start) return;
       const far = Math.hypot(e.clientX - start[0], e.clientY - start[1]) > 10;
       if (this._edit && this._edit.sel && (dragging || far) && e.buttons) {
+        // Keep the drag even when the pointer crosses the edit bar or leaves Start.
+        if (!dragging && container.setPointerCapture) container.setPointerCapture(e.pointerId);
         dragging = true;
+        last = [e.clientX, e.clientY];
         this._dragTo(e.clientX, e.clientY);
+        if (!scroller) scroller = requestAnimationFrame(autoscroll);
         return;
       }
       if (far) cancel();
@@ -495,6 +543,7 @@ class MosaicStart extends HTMLElement {
       cancel();
       start = null;
       dragging = false;
+      last = null;
     };
     container.addEventListener('pointerup', up);
     container.addEventListener('pointercancel', up);
@@ -679,9 +728,10 @@ class MosaicStart extends HTMLElement {
     const overTile = under.closest('.tile');
     let to;
     if (overTile && overTile.dataset.key !== e.sel) to = this._specAt(overTile.dataset.key);
-    else if (!overTile && under.closest('.grid')) {
+    else if (!overTile && under.closest('.group')) {
+      // Anywhere else on a group (its name, the space beside its tiles): last there.
       const gi = Number(under.closest('.group').dataset.g);
-      to = [gi, e.groups[gi].tiles.length];
+      if (gi !== g || t !== e.groups[gi].tiles.length - 1) to = [gi, e.groups[gi].tiles.length];
     }
     if (!to) return;
     const [spec] = e.groups[g].tiles.splice(t, 1);
@@ -1063,6 +1113,11 @@ class MosaicStart extends HTMLElement {
 }
 
 class MosaicStrategy extends HTMLElement {
+  // The same settings for a whole Mosaic dashboard ("Edit dashboard").
+  static async getConfigElement() {
+    return document.createElement('mosaic-start-editor');
+  }
+
   // strategy: { type: custom:mosaic, accent: ..., ... } -> one Start screen.
   static async generate(config) {
     const { type, ...card } = config || {};
@@ -1076,6 +1131,7 @@ class MosaicStrategy extends HTMLElement {
 if (!customElements.get('mosaic-start')) {
   customElements.define('mosaic-start', MosaicStart);
   customElements.define('ll-strategy-dashboard-mosaic', MosaicStrategy);
+  customElements.define('mosaic-start-editor', MosaicStartEditor);
   window.customCards = window.customCards || [];
   window.customCards.push({ type: 'mosaic-start', name: 'Mosaic Start', description: 'A live-tile Start screen for the whole home, after Windows Phone.', preview: false });
   window.customStrategies = window.customStrategies || [];

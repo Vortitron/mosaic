@@ -9,23 +9,30 @@ A live-tile Start screen for Home Assistant, after Windows Phone 10.
 - **The A–Z list:** swipe left (on a desktop it sits beside the tiles) for everything in the house, with search and a letter jump list. It lists **devices** (a smart plug is one row, not five sensors; tap it to open it like a room) or every **entity**: switch at the top, and each viewer's choice is remembered.
 - **An assistant where Cortana was:** a tile and the search box talk to your home's Assist agent. If that agent is Claude (the Anthropic integration), the tile says Claude.
 - **No setup:** with no config, Mosaic lays your home out from its floors and areas.
-- **Customise it like a phone:** hold a tile and Start comes loose. Drag tiles to move them, tap ↘ to resize, ✕ to unpin, then *done*. Hold anything in the list to *pin to start*. *automatic* goes back to the layout Mosaic picks. Changes are saved into the dashboard, so only admins can make them.
+- **Customise it like a phone:** hold a tile and Start comes loose. Drag tiles to move them (drag to the top or bottom edge and Start scrolls), tap ↘ to resize, ✕ to unpin, type over a group's name to rename it, *+ group* for a new one, then *done*. Hold anything in the list to *pin to start*. *automatic* goes back to the layout Mosaic picks. Changes are saved into the dashboard, so only admins can make them.
 
 ## Install
 
-HACS (custom repository, type *Dashboard*), or copy `dist/mosaic.js` to `/config/www/mosaic/` and add `/local/mosaic/mosaic.js` as a JavaScript module resource.
+**Home Assistant 2026.11 and later (the Marketplace):** Mosaic is waiting to join the catalogue. Until then, add `https://github.com/Vortitron/mosaic` as a custom repository of type *Dashboard* in Settings → Marketplace. Custom repositories need GitHub connected there, and only get update checks while it is.
 
-Then do either of these:
+**Earlier versions, with HACS:** add the same address as a custom repository of type *Dashboard*, then download Mosaic.
 
-- **Whole dashboard:** create a new dashboard, open its raw configuration editor and use
+Either way the card's resource is registered for you.
 
-  ```yaml
-  strategy:
-    type: custom:mosaic
-    accent: cobalt
-  ```
+**By hand:** download `mosaic.js` from the [latest release](https://github.com/Vortitron/mosaic/releases/latest) into `/config/www/mosaic/`, and add `/local/mosaic/mosaic.js` as a JavaScript module resource (Settings → Dashboards → ⋮ → Resources).
 
-- **One card:** add a `custom:mosaic-start` card to a panel view.
+### Make a Mosaic dashboard
+
+Settings → Dashboards → *Add dashboard* → *New dashboard from scratch*. Open it, choose ⋮ → *Raw configuration editor*, and replace everything with:
+
+```yaml
+strategy:
+  type: custom:mosaic
+```
+
+From then on the pencil (*Edit dashboard*) opens Mosaic's settings: accent colour, theme, the assistant and the rest. To change the tiles, hold one on the dashboard itself.
+
+Or add a *Mosaic Start* card to a view of your own; panel views suit it best.
 
 ## Options
 
@@ -78,4 +85,4 @@ npm test             # the model, in node
 python3 -m http.server 18766   # then open /tools/harness/ (fake home; ?theme=light&accent=lime&cols=8)
 ```
 
-`tools/hatest.cjs`, `tools/listtest.cjs` and `tools/haedittest.cjs` drive a real Home Assistant with Playwright (login, room toggle, Assist, the device list, saving a customised Start). `tools/edittest.cjs` runs the customising against the harness.
+`tools/hatest.cjs`, `tools/listtest.cjs` and `tools/haedittest.cjs` drive a real Home Assistant with Playwright (login, room toggle, Assist, the device list, saving a customised Start). `tools/edittest.cjs` runs the customising against the harness, and `tools/editortest.cjs` opens the settings in a real Home Assistant.

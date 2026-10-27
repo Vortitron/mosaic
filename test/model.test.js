@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { makeFakeHass } from '../tools/harness/fakehass.js';
 import { alphabet, letterOf, allList, autoGroups, deviceList, primaryEntity, pivotsFor, looksImportant, nextEvent, roomPivots, serviceFor, shortName, tapAction, tileModel, accentColour } from '../src/model.js';
 import { agentName, Conversation } from '../src/assistant.js';
+import { toForm, fromForm } from '../src/config.js';
 
 const hass = makeFakeHass();
 
@@ -131,4 +132,16 @@ test('the alphabet follows the home: Swedish has its own Å Ä Ö after Z, Engli
   const sv = { ...hass, language: 'sv', states: { ...hass.states, 'light.ovre': { entity_id: 'light.ovre', state: 'on', attributes: { friendly_name: 'Övre hallen' } }, 'light.alpha': { entity_id: 'light.alpha', state: 'on', attributes: { friendly_name: 'Zebra' } } } };
   const letters = allList(sv).map(([l]) => l);
   assert.deepEqual(letters.slice(-2), ['z', 'ö']);
+});
+
+test('the editor round-trips a config and keeps what it does not show', () => {
+  const conf = { type: 'custom:mosaic-start', accent: 'lime', groups: [{ name: '', tiles: [{ type: 'clock' }] }], assistant: { agent_id: 'conversation.claude' } };
+  assert.deepEqual(fromForm(conf, toForm(conf)), conf);
+  // Defaults are left out rather than written in.
+  assert.deepEqual(fromForm({ type: 'x' }, toForm({ type: 'x' })), { type: 'x' });
+  const off = fromForm(conf, { ...toForm(conf), show_assistant: false, columns: '8', theme: 'dark' });
+  assert.equal(off.assistant, false);
+  assert.equal(off.columns, 8);
+  assert.equal(off.theme, 'dark');
+  assert.deepEqual(off.groups, conf.groups);
 });

@@ -170,6 +170,14 @@ button { font: inherit; color: inherit; background: none; border: 0; padding: 0;
 .ebtn.unpin { top: -11px; right: -11px; }
 .ebtn.resize { bottom: -11px; right: -11px; }
 /* Notices rise from the bottom edge, where they cover no menu or title. */
+.editing .group h2 { margin: 6px 0 10px; }
+.editing .groups { user-select: none; -webkit-user-select: none; }
+.editing .gname { user-select: text; -webkit-user-select: text; }
+.gname { font: inherit; font-size: 15px; color: var(--fg); background: transparent; border: 0; border-bottom: 2px solid var(--line); padding: 2px 0; width: 100%; outline: none; text-transform: lowercase; }
+.gname:focus { border-color: var(--accent); }
+.editing .grid.empty { min-height: var(--unit); outline: 2px dashed var(--line); outline-offset: 2px; }
+.editing .grid.empty::after { content: 'drag tiles here'; grid-column: 1 / -1; align-self: center; color: var(--fg2); font-size: 14px; padding-left: 8px; }
+.addgroup { display: block; margin: 8px 0 0; border: 2px dashed var(--line); color: var(--fg2); padding: 10px 16px; font-size: 15px; }
 .toast { position: absolute; bottom: 0; left: 0; right: 0; z-index: 9; background: var(--accent); color: #fff; padding: 12px var(--pad) calc(12px + env(safe-area-inset-bottom)); font-size: 15px; transform: translateY(110%); transition: transform 250ms cubic-bezier(.1,.9,.2,1); pointer-events: none; }
 .toast.on { transform: none; }
 .msg .menu h3 { margin-bottom: 12px; }
