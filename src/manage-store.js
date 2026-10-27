@@ -16,7 +16,7 @@ export class ManageStore {
 
   async start(hass) {
     this.hass = hass;
-    await Promise.all(['devices', 'entities', 'entries', 'flows', 'issues', 'areas'].map((p) => this._load(p)));
+    await Promise.all(['devices', 'entities', 'entries', 'flows', 'issues', 'areas', 'floors'].map((p) => this._load(p)));
     await this._names();
     this.data.ready = true;
     this.onChange();
@@ -32,6 +32,7 @@ export class ManageStore {
       sub(() => conn.subscribeEvents(() => this._soon('devices'), 'device_registry_updated')),
       sub(() => conn.subscribeEvents(() => this._soon('entities'), 'entity_registry_updated')),
       sub(() => conn.subscribeEvents(() => this._soon('areas'), 'area_registry_updated')),
+      sub(() => conn.subscribeEvents(() => this._soon('floors'), 'floor_registry_updated')),
       sub(() => conn.subscribeEvents(() => this._soon('issues'), 'repairs_issue_registry_updated')),
       sub(() => conn.subscribeMessage(() => this._soon('entries'), { type: 'config_entries/subscribe' })),
       sub(() => conn.subscribeMessage(() => this._soon('flows'), { type: 'config_entries/flow/subscribe' })),
@@ -62,6 +63,7 @@ export class ManageStore {
       if (part === 'flows') this.data.flows = await ws({ type: 'config_entries/flow/progress' });
       if (part === 'issues') this.data.issues = (await ws({ type: 'repairs/list_issues' })).issues || [];
       if (part === 'areas') this.data.areas = await ws({ type: 'config/area_registry/list' });
+      if (part === 'floors') this.data.floors = await ws({ type: 'config/floor_registry/list' });
     } catch (e) {
       /* keep what we had */
     }

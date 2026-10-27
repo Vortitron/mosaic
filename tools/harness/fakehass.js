@@ -119,3 +119,18 @@ export function makeFakeHass(onUpdate, { agent = 'anthropic' } = {}) {
   };
   return hass;
 }
+
+// A made-up floor plan for the made-up house, in house.wad's format.
+export const FAKE_PLAN = {
+  rooms: [
+    { id: 'hall', name: 'Hallway', area: 'hallway', rects: [[0, 4, 2.5, 9]] },
+    { id: 'kitchen', name: 'Kitchen', area: 'kitchen', rects: [[2.5, 0, 7, 4]] },
+    { id: 'living', name: 'Living Room', area: 'living_room', rects: [[2.5, 4, 9, 9], [7, 2, 9, 4]] },
+    { id: 'comms', name: 'Comms Room', area: 'comms', rects: [[0, 0, 2.5, 4]] },
+    { id: 'garden', name: 'Garden', area: 'garden', outdoor: true, rects: [[9, 0, 13, 9]] },
+    { id: 'bedroom', name: 'Bedroom', area: 'bedroom', level: 'up', rects: [[0, 0, 5, 5]] },
+    { id: 'office', name: 'Office', area: 'office', level: 'up', rects: [[5, 0, 9, 5]] },
+    { id: 'landing', name: 'Landing', level: 'up', rects: [[0, 5, 9, 7]] },
+  ],
+  levels: { up: { floor: 2.7 } },
+};

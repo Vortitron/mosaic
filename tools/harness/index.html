@@ -35,7 +35,7 @@ for (const tag of ['ha-icon', 'ha-state-icon']) customElements.define(tag, class
     this.innerHTML = `<svg viewBox="0 0 24 24" width="100%" height="100%" fill="currentColor"><path d="${path}"/></svg>`;
   }
 });
-import { makeFakeHass } from './fakehass.js';
+import { makeFakeHass, FAKE_PLAN } from './fakehass.js';
 await import('../../dist/mosaic.js');
 const p = new URLSearchParams(location.search);
 // ?bare: no stand-in Home Assistant header (README screenshots).
@@ -43,10 +43,23 @@ if (p.has('bare')) document.querySelector('.hdr').remove();
 const card = document.querySelector('mosaic-start');
 const conf = { accent: p.get('accent') || 'cobalt', theme: p.get('theme') || 'auto' };
 if (p.has('cols')) conf.columns = Number(p.get('cols'));
+if (p.has('plan')) conf.floorplan = FAKE_PLAN;
 if (p.has('wall')) conf.wallpaper = p.get('wall') || '/tools/harness/art.svg';
 card.setConfig(conf);
 window.hass = makeFakeHass((h) => { card.hass = h; window.hass = h; }, { agent: p.get('agent') || 'anthropic' });
 if (p.get('theme') === 'light') window.hass.themes.darkMode = false;
+// ?big: a house the size of a real one (3,000 more entities on 180 devices).
+if (p.has('big')) {
+  const h = window.hass;
+  for (let d = 0; d < 180; d++) {
+    h.devices[`big${d}`] = { id: `big${d}`, name: `Gadget ${d}`, area_id: Object.keys(h.areas)[d % 7] };
+    for (let e = 0; e < 17; e++) {
+      const id = e === 0 ? `switch.gadget_${d}` : `sensor.gadget_${d}_${e}`;
+      h.states[id] = { entity_id: id, state: e === 0 ? 'off' : String(e * d), attributes: { friendly_name: `Gadget ${d} reading ${e}`, unit_of_measurement: e ? 'W' : undefined } };
+      h.entities[id] = { entity_id: id, device_id: `big${d}`, area_id: null, platform: 'demo' };
+    }
+  }
+}
 card.hass = window.hass;
 window.card = card;
 window.moreInfo = [];

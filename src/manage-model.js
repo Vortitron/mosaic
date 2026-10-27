@@ -11,7 +11,7 @@ export const HELPER_DOMAINS = ['input_boolean', 'input_button', 'input_number', 
 // Entities with no device that aren't things in the house: they have pages of their own.
 const NOT_THINGS = ['automation', 'script', 'zone', 'conversation', 'tts', 'stt', 'wake_word', 'ai_task', 'event', 'update', 'sun', 'notify', 'todo', 'calendar', 'weather'];
 
-export const emptyStore = () => ({ devices: [], entities: [], entries: [], flows: [], issues: [], areas: [], manifests: {}, issueText: {}, ready: false });
+export const emptyStore = () => ({ devices: [], entities: [], entries: [], flows: [], issues: [], areas: [], floors: [], manifests: {}, issueText: {}, ready: false });
 
 export const integrationName = (store, domain) => (store.manifests[domain] && store.manifests[domain].name) || domain.replace(/_/g, ' ');
 export const deviceLabel = (dev) => (dev && (dev.name_by_user || dev.name)) || 'Unnamed device';
@@ -169,7 +169,7 @@ export function deviceRows(store, hass, filter = '') {
     const status = dev.disabled_by ? 'disabled' : isOffline(store, hass, dev) ? 'not responding' : '';
     const live = ents.filter((e) => !e.disabled_by);
     // The room is the heading above, so it isn't repeated under the name.
-    rows.push({ kind: 'device', key: `d:${dev.id}`, device: dev.id, name, room, group: room || 'no room', sub: [integrations.join(', '), status].filter(Boolean).join(' · '), count: live.length, status });
+    rows.push({ kind: 'device', key: `d:${dev.id}`, device: dev.id, area: roomOf(store, dev), name, room, group: room || 'no room', sub: [integrations.join(', '), status].filter(Boolean).join(' · '), count: live.length, status });
   }
   for (const e of store.entities) {
     if (e.device_id || e.entity_category || NOT_THINGS.includes(e.entity_id.split('.')[0])) continue;
@@ -179,7 +179,7 @@ export function deviceRows(store, hass, filter = '') {
     const hay = `${name} ${e.entity_id} ${e.platform}`.toLowerCase();
     if (f && !hay.includes(f)) continue;
     const room = areaName(store, e.area_id);
-    rows.push({ kind: 'entity', key: `e:${e.entity_id}`, entity: e.entity_id, name, room, group: helper ? 'helpers' : 'without a device', sub: [room, helper ? 'helper' : integrationName(store, e.platform), e.disabled_by ? 'disabled' : ''].filter(Boolean).join(' · '), status: e.disabled_by ? 'disabled' : '' });
+    rows.push({ kind: 'entity', key: `e:${e.entity_id}`, entity: e.entity_id, area: e.area_id || null, name, room, group: helper ? 'helpers' : 'without a device', sub: [room, helper ? 'helper' : integrationName(store, e.platform), e.disabled_by ? 'disabled' : ''].filter(Boolean).join(' · '), status: e.disabled_by ? 'disabled' : '' });
   }
   // Rooms in the home's own order (A-Z), then the rest.
   const tail = ['no room', 'helpers', 'without a device'];
@@ -259,4 +259,21 @@ export function helperCreateMessage(type, name, values = {}) {
   if (type === 'input_datetime') Object.assign(msg, { has_date: true, has_time: true });
   if (type === 'input_number') msg.mode = 'slider';
   return msg;
+}
+
+// --- rooms ---------------------------------------------------------------------
+
+// Every room, by floor (top floor first), with how many devices are in it.
+export function roomsByFloor(store) {
+  const count = new Map();
+  for (const d of store.devices) {
+    const a = roomOf(store, d);
+    if (a) count.set(a, (count.get(a) || 0) + 1);
+  }
+  const floors = [...store.floors].sort((a, b) => (b.level ?? 0) - (a.level ?? 0));
+  const rooms = (floorId) => store.areas.filter((a) => (a.floor_id || null) === floorId).sort((a, b) => collator.compare(a.name, b.name)).map((a) => ({ area: a.area_id, name: a.name, icon: a.icon, devices: count.get(a.area_id) || 0 }));
+  const out = floors.map((f) => ({ floor: f.floor_id, name: f.name, rooms: rooms(f.floor_id) }));
+  const loose = rooms(null);
+  if (loose.length) out.push({ floor: null, name: floors.length ? 'no floor' : 'rooms', rooms: loose });
+  return out;
 }

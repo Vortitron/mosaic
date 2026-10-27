@@ -8,8 +8,9 @@
 
 import {
   ATTENTION_SECTIONS, NEW_HELPERS, attention, deviceLabel, deviceRows, entitiesOfDevice, helperCreateMessage,
-  integrationName, integrationRows,
+  integrationName, integrationRows, roomsByFloor,
 } from './manage-model.js';
+import { letterOf, langOf } from './model.js';
 
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
 const icon = (mdi, cls = '') => `<span class="ricon ${cls}"><ha-icon icon="${esc(mdi)}"></ha-icon></span>`;
@@ -46,6 +47,7 @@ export const settingsMethods = {
         <div class="ppage" data-p="devices"><div class="ptools"><input class="search sdev" type="search" placeholder="find a device, a room, a make, an entity" aria-label="find a device"><button class="pbtn" data-new="helper">+ helper</button></div><div class="plist"></div></div>
         <div class="ppage" data-p="integrations"><div class="ptools"><input class="search sint" type="search" placeholder="find an integration" aria-label="find an integration"><button class="pbtn" data-new="integration">+ add</button></div><div class="plist"></div></div>
       </div>
+      <div class="art" aria-hidden="true"></div>
     </div>`;
     const app = this._layer().firstElementChild;
     app.querySelector('.back').addEventListener('click', () => this._close());
@@ -60,10 +62,19 @@ export const settingsMethods = {
     });
     for (const input of app.querySelectorAll('.ptools .search')) input.addEventListener('input', () => this._renderSettings());
     app.addEventListener('click', (e) => this._settingsClick(e));
+    app.addEventListener('error', (e) => {
+      const img = e.target;
+      if (!img.classList || !img.classList.contains('brand')) return;
+      const span = document.createElement('span');
+      span.className = `ricon letter-icon${img.classList.contains('bad') ? ' bad' : ''}`;
+      span.textContent = img.dataset.letter;
+      img.replaceWith(span);
+    }, true);
     const start = Math.max(0, pivots.findIndex(([p]) => p === pivot));
     heads[start].classList.add('on');
     requestAnimationFrame(() => show(start, false));
     this._renderSettings();
+    this._paintArt();
   },
 
   _canManage() {
@@ -80,20 +91,27 @@ export const settingsMethods = {
       if (el.dataset.html === html) return;
       el.dataset.html = html;
       el.innerHTML = html;
-      this._hydrate(el);
+      this._hydrateLazy(el);
     };
-    if (!store || !store.ready) {
-      for (const p of ['attention', 'devices', 'integrations']) put(p, '<div class="empty">reading your home…</div>');
+    const ready = store && store.ready;
+    for (const page of app.querySelectorAll('.ppage')) this._waiting(page, !ready);
+    if (!ready) {
+      for (const p of ['attention', 'devices', 'integrations']) put(p, '<div class="waiting">reading your home…</div>');
       return;
     }
     const hass = this._hass;
     // Needs you.
-    const items = attention(store, hass);
+    const all = attention(store, hass);
+    // Devices found on the network are listed at the top of devices, where
+    // you'd look for them; needs you is the rest.
+    const found = all.filter((i) => i.kind === 'flow');
+    const items = all.filter((i) => i.kind !== 'flow');
     const offline = items.filter((i) => i.kind === 'offline');
     const count = items.length - offline.length;
     const head = app.querySelector('.pivots [data-p="attention"]');
     head.textContent = count ? `needs you (${count})` : 'all good';
-    const sections = ATTENTION_SECTIONS.map(([kind, title]) => {
+    app.querySelector('.pivots [data-p="devices"]').textContent = found.length ? `devices (${found.length} new)` : 'devices';
+    const sections = ATTENTION_SECTIONS.filter(([kind]) => kind !== 'flow').map(([kind, title]) => {
       const these = items.filter((i) => i.kind === kind);
       if (!these.length) return '';
       // Devices not answering: folded away, there can be dozens.
@@ -106,11 +124,35 @@ export const settingsMethods = {
     // Devices.
     const df = app.querySelector('.sdev').value;
     const groups = deviceRows(store, hass, df);
-    put('devices', groups.map(([g, rows]) => `<h4 class="ghead">${esc(g)}</h4>${rows.map((r) => this._deviceRowHtml(r)).join('')}`).join('') || '<div class="empty">nothing by that name</div>');
+    const q = df.trim().toLowerCase();
+    const newOnes = found.filter((i) => !q || `${i.title} ${i.sub}`.toLowerCase().includes(q));
+    // A room's name opens the rooms (by floor, on the plan when there is one).
+    const head2 = (g, rows) => {
+      const areaId = rows[0] && rows[0].kind === 'device' && rows[0].area;
+      return areaId ? `<h4 class="ghead" data-room="${esc(areaId)}" role="button" tabindex="0">${esc(g)}</h4>` : `<h4 class="ghead">${esc(g)}</h4>`;
+    };
+    put('devices', (newOnes.length ? `<h4 class="ghead">found on your network</h4>${newOnes.map((i) => this._attentionRow(i)).join('')}` : '')
+      + (groups.map(([g, rows]) => `${head2(g, rows)}${rows.map((r) => this._deviceRowHtml(r)).join('')}`).join('') || '<div class="empty">nothing by that name</div>'));
     // Integrations.
     const inf = app.querySelector('.sint').value;
     const rows = integrationRows(store, inf);
-    put('integrations', rows.map((r) => `<div class="row" data-k="integration" data-domain="${esc(r.domain)}">${`<span class="ricon letter-icon ${r.problem ? 'bad' : ''}">${esc(r.name.trim()[0] || '?')}</span>`}<span class="rname"><span>${esc(r.name)}</span><small>${esc(r.sub)}</small></span></div>`).join('') || '<div class="empty">nothing by that name</div>');
+    const lang = langOf(hass);
+    let last = null;
+    put('integrations', rows.map((r) => {
+      const l = letterOf(r.name, lang);
+      const letter = l !== last ? `<button class="letter" data-letter="${esc(l)}" aria-label="jump to a letter">${esc(l)}</button>` : '';
+      last = l;
+      return `${letter}<div class="row" data-k="integration" data-domain="${esc(r.domain)}">${this._brandIcon(r.domain, r.name, r.problem)}<span class="rname"><span>${esc(r.name)}</span><small>${esc(r.sub)}</small></span></div>`;
+    }).join('') || '<div class="empty">nothing by that name</div>');
+  },
+
+  // An integration's logo, as Home Assistant's own pages show it (from
+  // brands.home-assistant.io); a letter if that's turned off or missing.
+  _brandIcon(domain, name, problem) {
+    const letter = esc((name || domain).trim()[0] || '?');
+    if (this._config.brand_icons === false) return `<span class="ricon letter-icon ${problem ? 'bad' : ''}">${letter}</span>`;
+    const dark = !this.classList.contains('light');
+    return `<img class="brand ${problem ? 'bad' : ''}" alt="" loading="lazy" referrerpolicy="no-referrer" data-letter="${letter}" src="https://brands.home-assistant.io/_/${encodeURIComponent(domain)}/${dark ? 'dark_' : ''}icon.png">`;
   },
 
   _attentionRow(i) {
@@ -136,6 +178,13 @@ export const settingsMethods = {
     const btn = e.target.closest('[data-act]');
     const row = e.target.closest('.row');
     const neu = e.target.closest('[data-new]');
+    const roomHead = e.target.closest('.ghead[data-room]');
+    if (roomHead) return this._openRooms(roomHead.dataset.room);
+    const letter = e.target.closest('.letter');
+    if (letter) {
+      const list = letter.closest('.plist');
+      return this._openJump(new Set([...list.querySelectorAll('.letter')].map((x) => x.dataset.letter)), list);
+    }
     if (neu) return neu.dataset.new === 'helper' ? this._newHelper() : this._addIntegration();
     if (btn && btn.dataset.act === 'showoffline') {
       this._offlineOpen = true;
@@ -184,6 +233,7 @@ export const settingsMethods = {
     this._layer().innerHTML = `<div class="overlay app integration" role="dialog" aria-label="${esc(integrationName(store, domain))}">
       <div class="apptitle"><button class="back" aria-label="back">&larr;</button><span>${esc(integrationName(store, domain))}<small>${esc(domain)}</small></span></div>
       <div class="plist ipage"></div>
+      <div class="art" aria-hidden="true"></div>
     </div>`;
     const app = this._layer().firstElementChild;
     app.querySelector('.back').addEventListener('click', () => this._close());
@@ -211,6 +261,7 @@ export const settingsMethods = {
       if (row) this._openApp({ kind: 'device', device: row.dataset.device, under: this._overlay });
     });
     this._renderIntegration();
+    this._paintArt();
   },
 
   _renderIntegration() {
@@ -237,7 +288,7 @@ export const settingsMethods = {
 
   _deviceSettingsHtml(deviceId) {
     const store = this._store && this._store.data;
-    if (!store || !store.ready) return '<div class="empty">reading your home…</div>';
+    if (!store || !store.ready) return '<div class="dots" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></div><div class="waiting">reading your home…</div>';
     const dev = store.devices.find((d) => d.id === deviceId);
     if (!dev) return '<div class="empty">This device has gone.</div>';
     const areas = [...store.areas].sort((a, b) => a.name.localeCompare(b.name));
@@ -274,7 +325,24 @@ export const settingsMethods = {
         this._toast(t.value.trim() ? 'Renamed' : 'Back to its own name');
         return true;
       }
+      if (e.type === 'change' && (t.classList.contains('aname') || t.classList.contains('afloor') || t.classList.contains('aicon'))) {
+        const msg = { type: 'config/area_registry/update', area_id: t.dataset.area };
+        if (t.classList.contains('aname')) {
+          if (!t.value.trim()) return true;
+          msg.name = t.value.trim();
+        }
+        if (t.classList.contains('afloor')) msg.floor_id = t.value || null;
+        if (t.classList.contains('aicon')) msg.icon = t.value.trim() || null;
+        await hass.callWS(msg);
+        this._toast('Saved');
+        return true;
+      }
       if (e.type !== 'click') return false;
+      const all = t.closest('[data-allrooms]');
+      if (all) {
+        this._openRooms(all.dataset.allrooms);
+        return true;
+      }
       const flag = t.closest('[data-flag]');
       if (flag) {
         const id = flag.dataset.ent;
@@ -494,12 +562,14 @@ export const settingsMethods = {
     const submit = async (input) => {
       if (busy) return;
       busy = true;
+      this._waiting(div, true);
       try {
         step = await hass.callApi('POST', `${base}/${step.flow_id}`, input);
       } catch (err) {
         this._toast(`${(err && err.body && err.body.message) || (err && err.message) || err}`);
       }
       busy = false;
+      this._waiting(div, false);
       await draw();
     };
     div.addEventListener('click', (e) => {
@@ -517,5 +587,103 @@ export const settingsMethods = {
       }
     });
     await draw();
+  },
+
+  // --- rooms: by floor, on the plan when there is one ------------------------------
+
+  // under: where back goes; left out, it is whatever is open now.
+  _openRooms(focusArea, under) {
+    const store = this._store && this._store.data;
+    if (!store) return;
+    const prev = this._overlay;
+    if (under === undefined) under = prev && prev.kind === 'settings' ? { kind: 'settings', pivot: 'devices' } : prev || null;
+    this._overlay = { kind: 'rooms', under };
+    const floors = roomsByFloor(store);
+    const start = Math.max(0, floors.findIndex((f) => f.rooms.some((r) => r.area === focusArea)));
+    this._layer().innerHTML = `<div class="overlay app rooms ${this.shadowRoot.querySelector('.root').classList.contains('desk') ? 'wideapp' : ''}" role="dialog" aria-label="rooms">
+      <div class="apptitle"><button class="back" aria-label="back">&larr;</button><span>rooms</span></div>
+      <div class="pivots" role="tablist">${floors.map((f, i) => `<button role="tab" data-i="${i}" class="${i === start ? 'on' : ''}">${esc(f.name)}</button>`).join('')}</div>
+      <div class="ppages">${floors.map((f, i) => `<div class="ppage" data-i="${i}" data-floor="${esc(f.floor || '')}"></div>`).join('')}</div>
+    </div>`;
+    const app = this._layer().firstElementChild;
+    app.querySelector('.back').addEventListener('click', () => this._close());
+    const pages = app.querySelector('.ppages');
+    const heads = [...app.querySelectorAll('.pivots button')];
+    const show = (i, smooth) => pages.scrollTo({ left: pages.children[i].offsetLeft - pages.offsetLeft, behavior: smooth ? 'smooth' : 'auto' });
+    heads.forEach((b) => b.addEventListener('click', () => show(Number(b.dataset.i), true)));
+    pages.addEventListener('scroll', () => {
+      const i = Math.round(pages.scrollLeft / Math.max(1, pages.children[0].clientWidth));
+      heads.forEach((b, j) => b.classList.toggle('on', j === i));
+    });
+    app.addEventListener('click', (e) => {
+      const row = e.target.closest('.row[data-area]');
+      if (row) return this._openApp({ kind: 'room', area: row.dataset.area, under: { kind: 'rooms', under: this._overlay.under } });
+      if (e.target.closest('[data-newroom]')) this._newRoom(e.target.closest('[data-newroom]').dataset.newroom || null);
+    });
+    this._renderRooms(focusArea);
+    requestAnimationFrame(() => show(start, false));
+  },
+
+  _renderRooms(focusArea) {
+    const app = this._layer().querySelector('.app.rooms');
+    if (!app) return;
+    const store = this._store.data;
+    const floors = roomsByFloor(store);
+    for (const page of app.querySelectorAll('.ppage[data-floor]')) {
+      const f = floors.find((x) => (x.floor || '') === page.dataset.floor);
+      if (!f) continue;
+      // This floor's storey of the plan, when there is one.
+      const lv = this._plan ? this._levels().find((l) => (l.floorId || '') === (f.floor || '')) : null;
+      const plan = lv ? `<div class="liveplan" data-plan="${esc(lv.key) || 'main'}" data-highlight="${esc(focusArea || '')}">${this._planHtml({ level: lv.key, highlight: focusArea || null })}</div>` : '';
+      const html = `${plan}${f.rooms.map((r) => `<div class="row" data-area="${esc(r.area)}"><span class="ricon"><ha-icon icon="${esc(r.icon || 'mdi:door')}"></ha-icon></span><span class="rname"><span>${esc(r.name)}</span><small>${r.devices} device${r.devices === 1 ? '' : 's'}</small></span></div>`).join('')}
+        <div class="links"><button class="link" data-newroom="${esc(f.floor || '')}">+ room${f.floor ? ` on ${esc(f.name.toLowerCase())}` : ''}</button></div>`;
+      if (page.dataset.html === html) continue;
+      page.dataset.html = html;
+      page.innerHTML = html;
+      this._hydrate(page);
+    }
+  },
+
+  _newRoom(floorId) {
+    const under = this._overlay;
+    this._overlay = { kind: 'menu', under };
+    const store = this._store.data;
+    const div = document.createElement('div');
+    div.className = 'overlay msg';
+    div.innerHTML = `<div class="box" role="dialog" aria-label="new room"><h3>new room</h3>
+      <label class="field"><span>name</span><input data-k="name" placeholder="what you call it"></label>
+      <label class="field"><span>floor</span><select data-k="floor"><option value="">no floor</option>${[...store.floors].sort((a, b) => (b.level ?? 0) - (a.level ?? 0)).map((f) => `<option value="${esc(f.floor_id)}" ${f.floor_id === floorId ? 'selected' : ''}>${esc(f.name)}</option>`).join('')}</select></label>
+      <div class="btns"><button class="yes">make it</button><button class="no">cancel</button></div></div>`;
+    this._layer().append(div);
+    const finish = () => {
+      div.remove();
+      this._overlay = under;
+    };
+    div.addEventListener('click', async (e) => {
+      if (e.target === div || e.target.closest('.no')) return finish();
+      if (!e.target.closest('.yes')) return;
+      const name = div.querySelector('[data-k="name"]').value.trim();
+      if (!name) return this._toast('A room needs a name.');
+      try {
+        await this._hass.callWS({ type: 'config/area_registry/create', name, floor_id: div.querySelector('[data-k="floor"]').value || null });
+        finish();
+        this._toast(`${name} made`);
+      } catch (err) {
+        this._toast(`Not made: ${(err && err.message) || err}`);
+      }
+    });
+    div.querySelector('input').focus();
+  },
+
+  _roomSettingsHtml(areaId) {
+    const store = this._store && this._store.data;
+    if (!store || !store.ready) return '<div class="dots" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></div><div class="waiting">reading your home…</div>';
+    const a = store.areas.find((x) => x.area_id === areaId);
+    if (!a) return '<div class="empty">This room has gone.</div>';
+    const floors = [...store.floors].sort((x, y) => (y.level ?? 0) - (x.level ?? 0));
+    return `<label class="field"><span>name</span><input class="aname" data-area="${esc(areaId)}" value="${esc(a.name)}"></label>
+      <label class="field"><span>floor</span><select class="afloor" data-area="${esc(areaId)}"><option value="">no floor</option>${floors.map((f) => `<option value="${esc(f.floor_id)}" ${f.floor_id === a.floor_id ? 'selected' : ''}>${esc(f.name)}</option>`).join('')}</select></label>
+      <label class="field"><span>icon (an mdi: name)</span><input class="aicon" data-area="${esc(areaId)}" value="${esc(a.icon || '')}" placeholder="mdi:sofa"></label>
+      <div class="links"><button class="link" data-allrooms="${esc(areaId)}">all rooms</button><button class="link" data-nav="/config/areas/area/${esc(areaId)}">open in Home Assistant</button></div>`;
   },
 };

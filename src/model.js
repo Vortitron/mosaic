@@ -325,6 +325,7 @@ function entityTile(hass, spec, now) {
   const faces = [];
   const tap = tapAction(hass, id);
   let active = isOn(st);
+  let mood = null;
   let badge = null;
   const n = num(st.state);
   if (d === 'weather') {
@@ -335,6 +336,7 @@ function entityTile(hass, spec, now) {
     if (num(st.attributes.wind_speed) !== null) bits.push(`wind ${round(st.attributes.wind_speed)} ${st.attributes.wind_speed_unit || ''}`.trim());
     if (bits.length) faces.push({ kind: 'text', t1: hass.config && hass.config.location_name ? hass.config.location_name : 'outside', t2: bits.join('\n') });
     active = true;
+    mood = weatherMood(st.state, hass);
   } else if (d === 'person') {
     const pic = pictureOf(st, now);
     const where = st.state === 'home' ? 'home' : st.state === 'not_home' ? 'away' : st.state;
@@ -371,7 +373,7 @@ function entityTile(hass, spec, now) {
     if (d === 'binary_sensor' || d === 'lock' || d === 'vacuum' || d === 'alarm_control_panel') faces.push({ kind: 'text', t1: stateText(hass, id), t2: '' });
   }
   if (unavailable(st)) active = false;
-  return { label, active, badge, faces, tap, entity: id, rgb: d === 'light' && active ? st.attributes.rgb_color || null : null };
+  return { label, active, badge, faces, tap, entity: id, rgb: d === 'light' && active ? st.attributes.rgb_color || null : null, mood };
 }
 
 function areaTile(hass, spec, now) {
@@ -381,6 +383,8 @@ function areaTile(hass, spec, now) {
   const of = (d) => ids.filter((id) => domainOf(id) === d);
   const lightsOn = of('light').filter((id) => isOn(hass.states[id]));
   const faces = [];
+  // A photo of the room (Home Assistant areas can have one) peeks in turn.
+  if (area.picture && spec.size !== 'small') faces.push({ kind: 'image', url: area.picture, cap: '' });
   const cam = of('camera')[0];
   if (cam && (spec.size === 'wide' || spec.size === 'large')) faces.push({ kind: 'image', url: pictureOf(hass.states[cam], now), live: true });
   faces.push({ kind: 'icon', mdi: area.icon || guessAreaIcon(area.name) });
@@ -404,6 +408,21 @@ function areaTile(hass, spec, now) {
     faces,
     tap: { action: 'room', area: area.area_id },
   };
+}
+
+// The weather tile's sky: a soft light over the accent, by what the sky is doing.
+export function weatherMood(condition, hass) {
+  const night = hass && hass.states['sun.sun'] && hass.states['sun.sun'].state === 'below_horizon';
+  const c = String(condition || '');
+  if (/lightning|storm/.test(c)) return 'storm';
+  if (/rain|pour|hail/.test(c)) return 'rain';
+  if (/snow/.test(c)) return 'snow';
+  if (/fog/.test(c)) return 'fog';
+  if (c === 'clear-night' || (night && /sunny|clear/.test(c))) return 'night';
+  if (/sunny|clear/.test(c)) return 'sun';
+  if (/partly/.test(c)) return night ? 'night' : 'partly';
+  if (/cloud/.test(c)) return 'cloud';
+  return null;
 }
 
 // A room's icon from its name, in English or Swedish, when it has none of its

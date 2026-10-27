@@ -27,7 +27,7 @@ button { font: inherit; color: inherit; background: none; border: 0; padding: 0;
 /* --- panorama: Start and the A-Z list side by side ------------------------- */
 .pan { display: flex; height: 100%; overflow-x: auto; overflow-y: hidden; scroll-snap-type: x mandatory; scrollbar-width: none; overscroll-behavior-x: contain; }
 .pan::-webkit-scrollbar { display: none; }
-.page { flex: 0 0 100%; height: 100%; overflow-y: auto; scroll-snap-align: start; scrollbar-width: thin; padding: var(--pad); }
+.page { position: relative; flex: 0 0 100%; height: 100%; overflow-y: auto; scroll-snap-align: start; scrollbar-width: thin; padding: var(--pad); }
 .desk .pan { scroll-snap-type: none; overflow: hidden; }
 .desk .page.list { flex: 0 0 320px; order: -1; border-right: 1px solid var(--line); padding: 24px 16px; }
 .desk .page.start { flex: 1 1 auto; padding: 24px 32px; }
@@ -47,6 +47,20 @@ button { font: inherit; color: inherit; background: none; border: 0; padding: 0;
 .wall .tile { background-color: #000 !important; background-image: var(--wall) !important; background-repeat: no-repeat !important; background-size: var(--wall-size, cover) !important; }
 .wall .tile::before { content: ''; position: absolute; inset: 0; background: color-mix(in srgb, var(--accent) 42%, transparent); transition: background-color 300ms; }
 .wall .tile.off::before { background: rgba(0, 0, 0, .55); }
+/* Soft: a little light falls across each tile, so a wall of colour isn't a slab. */
+:host(:not(.flat)) .tile:not(.over) { background-image: linear-gradient(160deg, rgba(255,255,255,.13), rgba(255,255,255,0) 48%, rgba(0,0,0,.14)); }
+/* The weather tile's sky. */
+.tile[data-mood="sun"] { background-image: radial-gradient(circle at 82% 18%, rgba(255,214,102,.75), rgba(255,170,60,.25) 32%, transparent 60%) !important; }
+.tile[data-mood="partly"] { background-image: radial-gradient(circle at 80% 20%, rgba(255,214,102,.45), transparent 40%), radial-gradient(ellipse at 30% 75%, rgba(255,255,255,.22), transparent 55%) !important; }
+.tile[data-mood="cloud"] { background-image: radial-gradient(ellipse at 70% 30%, rgba(255,255,255,.28), transparent 55%), linear-gradient(180deg, rgba(120,130,150,.35), rgba(0,0,0,.15)) !important; }
+.tile[data-mood="rain"] { background-image: repeating-linear-gradient(105deg, rgba(255,255,255,.08) 0 2px, transparent 2px 14px), linear-gradient(180deg, rgba(40,50,70,.45), rgba(0,0,0,.25)) !important; }
+.tile[data-mood="storm"] { background-image: linear-gradient(180deg, rgba(20,20,40,.6), rgba(0,0,0,.35)), radial-gradient(circle at 60% 20%, rgba(255,240,180,.4), transparent 30%) !important; }
+.tile[data-mood="snow"] { background-image: radial-gradient(circle, rgba(255,255,255,.35) 1px, transparent 1.5px), linear-gradient(180deg, rgba(255,255,255,.18), rgba(0,0,0,.1)) !important; background-size: 14px 14px, auto !important; }
+.tile[data-mood="fog"] { background-image: linear-gradient(180deg, rgba(255,255,255,.3), rgba(255,255,255,.08)) !important; }
+.tile[data-mood="night"] { background-image: radial-gradient(circle at 80% 22%, rgba(255,255,230,.5) 0 6%, transparent 7%), linear-gradient(180deg, rgba(5,10,40,.55), rgba(0,0,0,.25)) !important; }
+.ghead[data-room] { cursor: pointer; }
+.ghead[data-room]::after { content: ' ›'; }
+.brand { width: 44px; height: 44px; flex: 0 0 44px; object-fit: contain; padding: 6px; background: var(--chrome); }
 .tile.missing { background: var(--chrome); color: var(--fg2); }
 .tile.pressed { transform: scale(0.96); }
 .tile.small { grid-column: span 1; grid-row: span 1; }
@@ -119,8 +133,15 @@ button { font: inherit; color: inherit; background: none; border: 0; padding: 0;
 .pivots button.on { color: var(--fg); }
 .ppages { flex: 1 1 auto; min-height: 0; display: flex; overflow-x: auto; scroll-snap-type: x mandatory; scrollbar-width: none; }
 .ppages::-webkit-scrollbar { display: none; }
-.ppage { flex: 0 0 100%; overflow-y: auto; scroll-snap-align: start; padding: 4px var(--pad) 40px; }
-.wideapp .ppage { flex-basis: min(100%, 520px); }
+.ppage { position: relative; flex: 0 0 100%; overflow-y: auto; scroll-snap-align: start; padding: 4px var(--pad) 40px; }
+.wideapp .ppage, .wideapp .ipage { padding-right: max(var(--pad), calc(100% - 760px)); }
+/* A desktop app shows one pivot at a time (so the headers switch) and puts
+   art in the space beside it. */
+.app > .art { display: none; }
+.wideapp > .art { display: flex; position: absolute; right: 3vw; top: 120px; bottom: 30px; width: calc(100% - 820px); min-width: 0; align-items: center; justify-content: center; pointer-events: none; }
+.wideapp > .art .liveplan { pointer-events: auto; max-height: 100%; }
+.art .bigicon { --mdc-icon-size: min(42vh, 30vw); color: var(--fg); opacity: .07; }
+@media (max-width: 1150px) { .wideapp > .art { display: none; } .wideapp .ppage, .wideapp .ipage { padding-right: var(--pad); } }
 .rimg { width: 100%; max-width: 520px; display: block; margin-bottom: 4px; }
 .toggle { flex: 0 0 auto; width: 50px; height: 24px; border: 2px solid var(--fg); border-radius: 12px; position: relative; }
 .toggle::after { content: ''; position: absolute; top: 3px; left: 4px; width: 14px; height: 14px; border-radius: 50%; background: var(--fg); transition: left 150ms; }
@@ -159,6 +180,66 @@ button { font: inherit; color: inherit; background: none; border: 0; padding: 0;
 .msg .btns { display: flex; gap: 10px; }
 .msg .btns button { flex: 1 1 0; border: 2px solid var(--fg); padding: 8px; font-size: 16px; }
 .msg .btns .yes { background: var(--accent); border-color: var(--accent); color: #fff; }
+
+/* --- the floor plan -------------------------------------------------------- */
+.liveplan { display: flex; flex-wrap: wrap; gap: 14px 22px; align-items: flex-start; }
+.liveplan .storey { margin: 0; flex-basis: 0; min-width: 140px; }
+.liveplan figcaption { font-size: 13px; color: var(--fg2); text-transform: lowercase; margin-bottom: 4px; }
+.art .liveplan { flex-direction: column; flex-wrap: nowrap; width: 100%; height: 100%; overflow: hidden; }
+.art .liveplan .storey { max-width: none; flex: 1 1 0; min-height: 0; display: flex; flex-direction: column; }
+.art .liveplan svg { flex: 1 1 auto; min-height: 0; height: 100%; }
+.plan { width: 100%; height: auto; display: block; overflow: visible; }
+.planart { width: auto !important; flex: 1 1 340px; max-width: 620px; }
+.plan .wall { fill: none; stroke: var(--fg2); stroke-width: .14; opacity: .55; }
+.plan .wall.out { stroke-dasharray: .35 .25; opacity: .35; }
+.plan .room rect { fill: color-mix(in srgb, var(--fg) 5%, transparent); transition: fill 300ms; }
+.plan .room.out rect { fill: transparent; }
+.plan .room.known { cursor: pointer; }
+.plan .room.known rect { fill: color-mix(in srgb, var(--accent) 16%, var(--bg)); }
+.plan .room.lit rect { fill: var(--accent); }
+.plan .room.playing:not(.lit) rect { fill: color-mix(in srgb, var(--accent) 45%, var(--bg)); }
+.plan .room.dim { opacity: .55; }
+.plan .room.here rect { fill: var(--accent); }
+.plan .room.here.dim, .plan .room.here { opacity: 1; }
+.plan .room.known:hover rect, .plan .room.known:focus rect { fill: color-mix(in srgb, var(--accent) 70%, var(--fg)); }
+.plan text.on { fill: #fff; stroke: rgba(0,0,0,.25); }
+.rooms .ppage > .liveplan { max-width: 640px; margin-bottom: 8px; }
+.rooms .ppage > .liveplan svg { max-height: 46vh; }
+.plan text { fill: var(--fg); text-anchor: middle; dominant-baseline: central; font-weight: 400; pointer-events: none; paint-order: stroke; stroke: var(--bg); stroke-width: .05; }
+
+/* --- Windows Phone's progress dots: five dots that hurry in, dawdle, hurry out */
+.dots { position: absolute; left: 0; right: 0; top: 0; height: 6px; overflow: hidden; pointer-events: none; z-index: 5; }
+.dots i { position: absolute; top: 1px; left: -8px; width: 4px; height: 4px; border-radius: 50%; background: var(--accent2); animation: dot 2.8s infinite; opacity: 0; }
+.dots i:nth-child(2) { animation-delay: .16s; } .dots i:nth-child(3) { animation-delay: .32s; } .dots i:nth-child(4) { animation-delay: .48s; } .dots i:nth-child(5) { animation-delay: .64s; }
+@keyframes dot { 0% { left: 0; opacity: 0; animation-timing-function: cubic-bezier(.1,.7,.4,1); } 8% { opacity: 1; } 35% { left: 42%; animation-timing-function: linear; } 65% { left: 58%; animation-timing-function: cubic-bezier(.6,0,.9,.3); } 92% { opacity: 1; } 100% { left: 100%; opacity: 0; } }
+.waiting { color: var(--fg2); font-size: 15px; padding: 18px 0 6px; }
+/* Long lists: the browser skips laying out rows far off screen. */
+.listbody .row, .listbody .letter, .plist .row { content-visibility: auto; contain-intrinsic-size: auto 56px; }
+
+/* --- the back of a tile ----------------------------------------------------- */
+.tile.flipped .faces, .tile.flipped > .label, .tile.flipped > .badge { visibility: hidden; }
+.tback { display: none; position: absolute; inset: 0; flex-direction: column; padding: 6px 7px 7px; background: color-mix(in srgb, var(--accent) 82%, #000); color: #fff; text-align: left; }
+.wall .tback { background: color-mix(in srgb, var(--accent) 70%, rgba(0,0,0,.7)); }
+.tile.flipped .tback { display: flex; }
+.bhead { display: flex; align-items: baseline; gap: 6px; font-size: 13px; font-weight: 400; }
+.btitle { flex: 1 1 auto; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.bopen { opacity: .8; font-size: 14px; }
+.bsub { font-size: 12px; opacity: .85; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.bbody { flex: 1 1 auto; display: flex; flex-direction: column; justify-content: center; gap: 6px; min-height: 0; }
+.chips { display: grid; grid-template-columns: repeat(auto-fill, minmax(calc(var(--unit) * 0.82), 1fr)); grid-auto-rows: 1fr; gap: 4px; flex: 1 1 auto; margin-top: 4px; min-height: 0; }
+.chip { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px; padding: 2px; border: 1px solid rgba(255,255,255,.45); color: #fff; min-height: 0; overflow: hidden; }
+.chip.on { background: rgba(255,255,255,.92); color: var(--accent); border-color: transparent; }
+.chip ha-state-icon, .chip ha-icon { --mdc-icon-size: calc(var(--unit) * 0.34); }
+.chip span { font-size: 10px; line-height: 1.1; max-width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tback .toggle { border-color: #fff; align-self: flex-start; width: 58px; height: 28px; border-radius: 14px; }
+.tback .toggle::after { background: #fff; top: 4px; left: 5px; width: 16px; height: 16px; }
+.tback .toggle.on { background: #fff; border-color: #fff; }
+.tback .toggle.on::after { left: 33px; background: var(--accent); }
+.bstep { display: flex; align-items: center; gap: 8px; font-size: 15px; }
+.bstep button, .bbtns button { width: 34px; height: 34px; border: 1px solid rgba(255,255,255,.6); color: #fff; font-size: 20px; line-height: 1; display: inline-flex; align-items: center; justify-content: center; }
+.bbtns { display: flex; gap: 6px; }
+.bbtns button.on { background: #fff; color: var(--accent); }
+.bbtns ha-icon { --mdc-icon-size: 20px; }
 
 /* --- settings ----------------------------------------------------------------- */
 .ghead { margin: 18px 0 6px; font-size: 14px; font-weight: 400; color: var(--accent2); text-transform: lowercase; }
