@@ -44,3 +44,15 @@ test('rooms by floor, top floor first, with their devices', () => {
   assert.deepEqual(f.map((x) => x.name), ['Up', 'Ground', 'no floor']);
   assert.deepEqual(f[1].rooms, [{ area: 'k', name: 'Kitchen', icon: undefined, devices: 2 }]);
 });
+
+import { stackSvg } from '../src/plan.js';
+
+test('the stacked house: floors drawn bottom first, names upright, rooms still open', () => {
+  const levels = planLevels(FAKE_PLAN, hass);
+  const svg = stackSvg(levels, hass, entitiesByArea(hass), { mode: 'temperature' });
+  assert.ok(svg.indexOf('>Downstairs<') < svg.indexOf('>Upstairs<'), 'the ground floor first, so the floor above is drawn over it');
+  assert.equal((svg.match(/class="lift"/g) || []).length, 2);
+  assert.match(svg, /data-area="kitchen"/);
+  assert.match(svg, /<text class="on value"[^>]*>21.4°<\/text>/, 'temperatures shown, upright (outside the turned floor)');
+  assert.ok(!/<g transform[^>]*>[^]*?<text class="on value"/.test(svg.split('</g><text')[0]), 'labels are not inside the turned group');
+});

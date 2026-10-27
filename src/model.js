@@ -388,14 +388,8 @@ function areaTile(hass, spec, now) {
   const cam = of('camera')[0];
   if (cam && (spec.size === 'wide' || spec.size === 'large')) faces.push({ kind: 'image', url: pictureOf(hass.states[cam], now), live: true });
   faces.push({ kind: 'icon', mdi: area.icon || guessAreaIcon(area.name) });
-  // The sensors picked for the area in Home Assistant's area settings win.
-  const pick = (chosen, dc) => (chosen && hass.states[chosen] && num(hass.states[chosen].state) !== null ? chosen : null)
-    || ids.find((id) => domainOf(id) === 'sensor' && hass.states[id].attributes.device_class === dc && num(hass.states[id].state) !== null);
-  const temp = pick(area.temperature_entity_id, 'temperature');
-  const climate = of('climate')[0];
-  const t = temp ? num(hass.states[temp].state) : climate ? num(hass.states[climate].attributes.current_temperature) : null;
-  const hum = pick(area.humidity_entity_id, 'humidity');
-  if (t !== null) faces.push({ kind: 'big', big: `${round(t)}°`, sub: hum ? `${Math.round(num(hass.states[hum].state))}% humidity` : 'inside' });
+  const { temp: t, hum: h } = areaClimate(hass, area, ids);
+  if (t !== null) faces.push({ kind: 'big', big: `${round(t)}°`, sub: h !== null ? `${Math.round(h)}% humidity` : 'inside' });
   const playing = of('media_player').find((id) => hass.states[id].state === 'playing' && hass.states[id].attributes.media_title);
   if (playing) faces.push({ kind: 'text', t1: 'now playing', t2: hass.states[playing].attributes.media_title, t3: hass.states[playing].attributes.media_artist || '' });
   const motion = ids.find((id) => domainOf(id) === 'binary_sensor' && ['motion', 'occupancy', 'presence'].includes(hass.states[id].attributes.device_class) && hass.states[id].state === 'on');
@@ -407,6 +401,20 @@ function areaTile(hass, spec, now) {
     badge: lightsOn.length ? String(lightsOn.length) : null,
     faces,
     tap: { action: 'room', area: area.area_id },
+  };
+}
+
+// A room's temperature and humidity: the sensors picked in Home Assistant's
+// area settings, else the first ones in the room (or its heating's reading).
+export function areaClimate(hass, area, ids = entitiesByArea(hass).get(area.area_id) || []) {
+  const pick = (chosen, dc) => (chosen && hass.states[chosen] && num(hass.states[chosen].state) !== null ? chosen : null)
+    || ids.find((id) => domainOf(id) === 'sensor' && hass.states[id].attributes.device_class === dc && num(hass.states[id].state) !== null);
+  const temp = pick(area.temperature_entity_id, 'temperature');
+  const climate = ids.find((id) => domainOf(id) === 'climate' && num(hass.states[id].attributes.current_temperature) !== null);
+  const hum = pick(area.humidity_entity_id, 'humidity');
+  return {
+    temp: temp ? num(hass.states[temp].state) : climate ? num(hass.states[climate].attributes.current_temperature) : null,
+    hum: hum ? num(hass.states[hum].state) : null,
   };
 }
 

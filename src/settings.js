@@ -619,6 +619,8 @@ export const settingsMethods = {
       const row = e.target.closest('.row[data-area]');
       if (row) return this._openApp({ kind: 'room', area: row.dataset.area, under: { kind: 'rooms', under: this._overlay.under } });
       if (e.target.closest('[data-newroom]')) this._newRoom(e.target.closest('[data-newroom]').dataset.newroom || null);
+      const pe = e.target.closest('[data-planedit]');
+      if (pe) this._openPlanEditor(pe.dataset.planedit);
     });
     this._renderRooms(focusArea);
     requestAnimationFrame(() => show(start, false));
@@ -634,9 +636,9 @@ export const settingsMethods = {
       if (!f) continue;
       // This floor's storey of the plan, when there is one.
       const lv = this._plan ? this._levels().find((l) => (l.floorId || '') === (f.floor || '')) : null;
-      const plan = lv ? `<div class="liveplan" data-plan="${esc(lv.key) || 'main'}" data-highlight="${esc(focusArea || '')}">${this._planHtml({ level: lv.key, highlight: focusArea || null })}</div>` : '';
+      const plan = lv ? `${this._planModesHtml()}<div class="liveplan" data-plan="${esc(lv.key) || 'main'}" data-highlight="${esc(focusArea || '')}">${this._planHtml({ level: lv.key, highlight: focusArea || null })}</div>` : '';
       const html = `${plan}${f.rooms.map((r) => `<div class="row" data-area="${esc(r.area)}"><span class="ricon"><ha-icon icon="${esc(r.icon || guessAreaIcon(r.name))}"></ha-icon></span><span class="rname"><span>${esc(r.name)}</span><small>${r.devices} device${r.devices === 1 ? '' : 's'}</small></span></div>`).join('')}
-        <div class="links"><button class="link" data-newroom="${esc(f.floor || '')}">+ room${f.floor ? ` on ${esc(f.name.toLowerCase())}` : ''}</button></div>`;
+        <div class="links"><button class="link" data-newroom="${esc(f.floor || '')}">+ room${f.floor ? ` on ${esc(f.name.toLowerCase())}` : ''}</button>${this._canEdit() ? `<button class="link" data-planedit="${esc(lv ? lv.key : f.floor || '')}">${this._planIsSketch || !this._plan ? 'draw the floor plan' : 'edit the floor plan'}</button>` : ''}</div>`;
       if (page.dataset.html === html) continue;
       page.dataset.html = html;
       page.innerHTML = html;

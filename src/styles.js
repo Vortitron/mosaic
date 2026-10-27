@@ -113,6 +113,11 @@ button { font: inherit; color: inherit; background: none; border: 0; padding: 0;
 .letter { display: flex; align-items: flex-end; width: 44px; height: 44px; padding: 0 0 4px 6px; margin: 14px 0 8px; border: 2px solid var(--accent); color: var(--fg); font-size: 22px; font-weight: 350; line-height: 1; }
 .row { display: flex; align-items: center; gap: 12px; padding: 6px 0; cursor: pointer; -webkit-tap-highlight-color: transparent; min-height: 52px; }
 .row:active { opacity: .7; }
+/* On a wide page the switch stays near its name: rows are no wider than a
+   phone's, with a faint band to carry the eye across. */
+.ppage .row, .plist .row { max-width: 560px; }
+.ppage .row:nth-of-type(even), .ipage .row:nth-of-type(even) { background: color-mix(in srgb, var(--fg) 4%, transparent); }
+.ppage .row, .ipage .row { padding-left: 6px; padding-right: 6px; }
 .ricon { flex: 0 0 44px; height: 44px; background: var(--accent); display: flex; align-items: center; justify-content: center; color: #fff; }
 .ricon.off { background: color-mix(in srgb, var(--accent) 34%, var(--bg)); }
 .ricon ha-state-icon { --mdc-icon-size: 26px; }
@@ -206,6 +211,45 @@ button { font: inherit; color: inherit; background: none; border: 0; padding: 0;
 .rooms .ppage > .liveplan { max-width: 640px; margin-bottom: 8px; }
 .rooms .ppage > .liveplan svg { max-height: 46vh; }
 .plan text { fill: var(--fg); text-anchor: middle; dominant-baseline: central; font-weight: 400; pointer-events: none; paint-order: stroke; stroke: var(--bg); stroke-width: .05; }
+
+/* Temperature and humidity: each room in its own colour, the reading on it. */
+.plan .room.measured rect { fill: var(--fill); }
+.plan text.value { font-weight: 300; }
+.planmodes { display: flex; gap: 14px; margin: -4px 0 8px; }
+.planmodes button { font-size: 14px; color: var(--fg2); text-transform: lowercase; }
+.planmodes button.on { color: var(--fg); border-bottom: 2px solid var(--accent); }
+/* The house stacked: each floor turned and flattened, the top one highest.
+   Hovering a floor lifts it and fades the others. */
+.plan.stacked .lift { transition: transform 300ms cubic-bezier(.1,.9,.2,1), opacity 300ms; }
+.plan.stacked:hover .lift { opacity: .35; }
+.plan.stacked .lift:hover { opacity: 1; transform: translate(0, -0.5px); }
+.plan .floorname { fill: var(--fg2); font-size: .55px; text-anchor: end; dominant-baseline: central; text-transform: lowercase; }
+.plan .slab { fill: color-mix(in srgb, var(--fg) 10%, var(--bg)); stroke: var(--fg2); stroke-width: .1; opacity: .9; }
+
+/* --- the plan editor --------------------------------------------------------- */
+.planart h2 small { color: var(--fg2); font-size: 13px; }
+.planedit-link { font-size: 13px; margin: -6px 0 6px; }
+.pe { flex: 1 1 auto; min-height: 0; display: flex; gap: 16px; padding: 4px var(--pad) 0; }
+.pecanvas { flex: 1 1 auto; min-width: 0; min-height: 0; display: flex; }
+.pepanel { flex: 0 0 300px; overflow-y: auto; padding-bottom: 20px; }
+.planedit .apptitle small { display: block; text-transform: none; letter-spacing: 0; font-weight: 400; color: var(--fg2); }
+@media (max-width: 760px) { .pe { flex-direction: column; } .pecanvas { flex: 0 0 52vh; } .pepanel { flex: 1 1 auto; } }
+.pesvg { width: 100%; height: 100%; touch-action: none; user-select: none; background: color-mix(in srgb, var(--fg) 3%, var(--bg)); }
+.pesvg .grid line { stroke: var(--line); stroke-width: .02; }
+.pesvg .pr rect { fill: color-mix(in srgb, var(--accent) 35%, var(--bg)); stroke: var(--fg2); stroke-width: .06; cursor: move; fill-opacity: .85; }
+.pesvg .pr.out rect { fill: transparent; stroke-dasharray: .3 .2; }
+.pesvg .pr.sel rect { fill: var(--accent); }
+.pesvg .pr rect.part { stroke: var(--fg); stroke-width: .12; }
+.pesvg .pr text { fill: var(--fg); text-anchor: middle; dominant-baseline: central; pointer-events: none; }
+.pesvg .pr.sel text { fill: #fff; }
+.pesvg .ph { fill: #fff; stroke: var(--accent); stroke-width: .1; cursor: nwse-resize; }
+.pesvg.movedrawing { cursor: grab; }
+.pesvg.movedrawing .pr { pointer-events: none; opacity: .6; }
+.pebar { display: flex; gap: 10px; padding: 10px var(--pad) calc(10px + env(safe-area-inset-bottom)); background: var(--chrome); }
+.pebar button { flex: 1 1 0; border: 2px solid var(--fg); padding: 8px; font-size: 16px; }
+.pebar .yes { background: var(--accent); border-color: var(--accent); color: #fff; }
+.fileb { display: inline-block; margin: 4px 0 10px; cursor: pointer; }
+.peimport { width: 100%; font: 13px monospace; background: var(--bg); color: var(--fg); border: 2px solid var(--line); padding: 8px; margin-bottom: 12px; }
 
 /* --- Windows Phone's progress dots: five dots that hurry in, dawdle, hurry out */
 .dots { position: absolute; left: 0; right: 0; top: 0; height: 6px; overflow: hidden; pointer-events: none; z-index: 5; }

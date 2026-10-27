@@ -2,8 +2,9 @@
 // the tiles, the empty side of a page on a desktop), and a large quiet icon
 // where there is no plan. Mixed into the card like the settings.
 
-import { areaOfRoom, bbox, levelSvg, planLevels, validPlan } from './plan.js';
-import { entitiesByArea, guessAreaIcon } from './model.js';
+import { areaOfRoom, bbox, levelSvg, planLevels, stackSvg, validPlan } from './plan.js';
+import { areaClimate, entitiesByArea, guessAreaIcon } from './model.js';
+import { PLAN_MODES } from './plan.js';
 
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
 
@@ -41,6 +42,15 @@ export const artMethods = {
     } catch (e) {
       /* no plan, then */
     }
+    // No plan anywhere: a sketch of the rooms, to be drawn properly in the editor.
+    this._planIsSketch = false;
+    if (!plan && c.floorplan !== false) {
+      const sketch = this._sketch();
+      if (validPlan(sketch)) {
+        plan = sketch;
+        this._planIsSketch = true;
+      }
+    }
     if (!plan) return;
     this._plan = plan;
     this._planSig = null;
@@ -52,18 +62,61 @@ export const artMethods = {
     return this._plan ? planLevels(this._plan, this._hass) : [];
   },
 
+  _planMode() {
+    if (!this._planModeValue) {
+      try {
+        this._planModeValue = localStorage.getItem('mosaic.planmode') || 'lights';
+      } catch (e) {
+        this._planModeValue = 'lights';
+      }
+    }
+    return PLAN_MODES.includes(this._planModeValue) ? this._planModeValue : 'lights';
+  },
+
+  _setPlanMode(mode) {
+    this._planModeValue = mode;
+    try {
+      localStorage.setItem('mosaic.planmode', mode);
+    } catch (e) {
+      /* not remembered, then */
+    }
+    for (const b of this.shadowRoot.querySelectorAll('.planmodes button')) b.classList.toggle('on', b.dataset.mode === mode);
+    this._refreshPlans(true);
+  },
+
+  // The view switch, offering temperature and humidity only when some room has them.
+  _planModesHtml() {
+    const hass = this._hass;
+    const areas = Object.values(hass.areas || {});
+    const has = (k) => areas.some((a) => areaClimate(hass, a)[k] !== null);
+    const modes = PLAN_MODES.filter((m) => m === 'lights' || (m === 'temperature' ? has('temp') : has('hum')));
+    if (modes.length < 2) return '';
+    const on = this._planMode();
+    return `<div class="planmodes" role="tablist" aria-label="what the plan shows">${modes.map((m) => `<button role="tab" data-mode="${m}" class="${m === on ? 'on' : ''}">${m}</button>`).join('')}</div>`;
+  },
+
+  // Every storey stacked into one tilted picture of the house.
+  _stackHtml(highlight) {
+    return stackSvg(this._levels(), this._hass, entitiesByArea(this._hass), { highlight, mode: this._planMode() });
+  },
+
   // A storey (or every storey) as live SVG. highlight picks out one room.
-  _planHtml({ level = null, highlight = null, labels = true } = {}) {
+  _planHtml({ level = null, highlight = null, labels = true, stack = false } = {}) {
+    if (stack && level === null && this._levels().length > 1) return this._stackHtml(highlight);
     const byArea = entitiesByArea(this._hass);
+    const mode = this._planMode();
     const levels = this._levels().filter((l) => level === null || l.key === level);
     // Side by side, each storey as wide as it really is: one scale for the house.
-    return levels.map((l) => `<figure class="storey" style="flex-grow:${bbox(l.rooms).w.toFixed(1)}">${levels.length > 1 || level === null ? `<figcaption>${esc(l.name)}</figcaption>` : ''}${levelSvg(l, this._hass, byArea, { highlight, labels })}</figure>`).join('');
+    return levels.map((l) => `<figure class="storey" style="flex-grow:${bbox(l.rooms).w.toFixed(1)}">${levels.length > 1 || level === null ? `<figcaption>${esc(l.name)}</figcaption>` : ''}${levelSvg(l, this._hass, byArea, { highlight, labels, mode })}</figure>`).join('');
   },
 
   // The Start screen's own picture of the house: a group of its own beside the tiles.
   _startArtHtml() {
     if (!this._plan || this._config.show_plan === false) return '';
-    return `<section class="group planart" aria-label="the house"><h2>the house</h2><div class="liveplan" data-plan="all">${this._planHtml({ labels: true })}</div></section>`;
+    const stack = this._config.plan_view !== 'flat';
+    const sketch = this._planIsSketch ? '<small> · a sketch of your rooms</small>' : '';
+    const edit = this._canEdit() ? `<button class="link planedit-link" data-planedit="">${this._planIsSketch ? 'draw it properly' : 'edit the plan'}</button>` : '';
+    return `<section class="group planart" aria-label="the house"><h2>the house${sketch}</h2>${edit}${this._planModesHtml()}<div class="liveplan" data-plan="all"${stack ? ' data-stack="1"' : ''}>${this._planHtml({ labels: true, stack })}</div></section>`;
   },
 
   // Art for an app's empty side: the plan with this room picked out, or a
@@ -105,17 +158,29 @@ export const artMethods = {
   _refreshPlans(force = false) {
     if (!this._plan) return;
     const byArea = entitiesByArea(this._hass);
-    const sig = [...byArea.entries()].map(([a, ids]) => `${a}:${ids.filter((id) => (id.startsWith('light.') || id.startsWith('media_player.')) && this._hass.states[id] && ['on', 'playing'].includes(this._hass.states[id].state)).length}`).join(',');
+    const mode = this._planMode();
+    const areas = this._hass.areas || {};
+    const sig = mode + [...byArea.entries()].map(([a, ids]) => {
+      if (mode === 'lights') return `${a}:${ids.filter((id) => (id.startsWith('light.') || id.startsWith('media_player.')) && this._hass.states[id] && ['on', 'playing'].includes(this._hass.states[id].state)).length}`;
+      const c = areas[a] ? areaClimate(this._hass, areas[a], ids) : {};
+      return `${a}:${mode === 'temperature' ? c.temp : c.hum}`;
+    }).join(',');
     if (!force && sig === this._planSig) return;
     this._planSig = sig;
     for (const el of [...this.shadowRoot.querySelectorAll('.liveplan')]) {
       const lv = el.dataset.plan;
-      el.innerHTML = this._planHtml({ level: lv === 'all' ? null : lv === 'main' ? '' : lv, highlight: el.dataset.highlight || null });
+      el.innerHTML = this._planHtml({ level: lv === 'all' ? null : lv === 'main' ? '' : lv, highlight: el.dataset.highlight || null, stack: !!el.dataset.stack });
     }
   },
 
-  // A room on any plan: open it.
+  // A room on any plan: open it. The view switch: change what every plan shows.
   _planClick(e) {
+    const mode = e.target.closest && e.target.closest('.planmodes button');
+    if (mode) {
+      e.stopPropagation();
+      this._setPlanMode(mode.dataset.mode);
+      return true;
+    }
     const room = e.target.closest && e.target.closest('[data-area]');
     if (!room || !room.closest('.liveplan')) return false;
     e.stopPropagation();

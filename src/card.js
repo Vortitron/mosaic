@@ -41,8 +41,9 @@ import { attention } from './manage-model.js';
 import { settingsMethods } from './settings.js';
 import { backOf } from './backs.js';
 import { artMethods } from './art.js';
+import { planEditMethods } from './plan-edit.js';
 
-const VERSION = '0.7.0-beta.5';
+const VERSION = '0.7.0-beta.6';
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
 const reduced = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
 const ON = ['on', 'open', 'opening', 'unlocked', 'playing', 'home', 'heat', 'cool', 'heat_cool', 'auto', 'cleaning'];
@@ -673,6 +674,8 @@ class MosaicStart extends HTMLElement {
     // the plan opens it.
     container.addEventListener('click', (e) => {
       if (tileOf(e) || this._edit) return;
+      const pe = e.target.closest && e.target.closest('[data-planedit]');
+      if (pe) return this._openPlanEditor(pe.dataset.planedit || undefined);
       if (this._planClick(e)) return;
       this._unflip();
     });
@@ -734,16 +737,20 @@ class MosaicStart extends HTMLElement {
     } catch (e) {
       return { error: 'Mosaic could not read this dashboard to change it.' };
     }
-    const withGroups = (obj, groups) => {
+    // A patch: each key set, or taken out when null (groups also retire the
+    // older tiles key).
+    const withPatch = (obj, patch) => {
       const out = { ...obj };
-      delete out.tiles;
-      if (groups) out.groups = groups;
-      else delete out.groups;
+      if ('groups' in patch) delete out.tiles;
+      for (const [k, v] of Object.entries(patch)) {
+        if (v === null || v === undefined) delete out[k];
+        else out[k] = v;
+      }
       return out;
     };
     if (config.strategy) {
       if (config.strategy.type !== 'custom:mosaic') return { error: 'This dashboard is built by another strategy.' };
-      return { urlPath, build: (groups) => ({ ...config, strategy: withGroups(config.strategy, groups) }) };
+      return { urlPath, build: (patch) => ({ ...config, strategy: withPatch(config.strategy, patch) }) };
     }
     // Find this card in the views. Two Mosaic cards on one dashboard: we
     // can't tell which one is us, so say so rather than guess.
@@ -760,25 +767,30 @@ class MosaicStart extends HTMLElement {
     const path = paths[0];
     return {
       urlPath,
-      build: (groups) => {
+      build: (patch) => {
         const copy = JSON.parse(JSON.stringify(config));
         let parent = copy;
         for (const k of path.slice(0, -1)) parent = parent[k];
         const last = path[path.length - 1];
-        parent[last] = withGroups(parent[last], groups);
+        parent[last] = withPatch(parent[last], patch);
         return copy;
       },
     };
   }
 
-  async _save(groups, done) {
+  _save(groups, done) {
+    return this._saveConfig({ groups: groups || null }, done);
+  }
+
+  // Write some of this card's settings into the dashboard (null takes one out).
+  async _saveConfig(patch, done) {
     const target = await this._saveTarget();
     if (target.error) {
       this._toast(target.error);
       return false;
     }
     try {
-      await this._hass.callWS({ type: 'lovelace/config/save', url_path: target.urlPath, config: target.build(groups) });
+      await this._hass.callWS({ type: 'lovelace/config/save', url_path: target.urlPath, config: target.build(patch) });
     } catch (e) {
       this._toast(`Not saved: ${(e && e.message) || e}`);
       return false;
@@ -786,9 +798,11 @@ class MosaicStart extends HTMLElement {
     // Home Assistant reloads the dashboard with the saved config; show it
     // straight away rather than wait for that.
     const next = { ...this._config };
-    delete next.tiles;
-    if (groups) next.groups = groups;
-    else delete next.groups;
+    if ('groups' in patch) delete next.tiles;
+    for (const [k, v] of Object.entries(patch)) {
+      if (v === null || v === undefined) delete next[k];
+      else next[k] = v;
+    }
     this._config = next;
     if (done) this._toast(done);
     return true;
@@ -937,7 +951,8 @@ class MosaicStart extends HTMLElement {
 
   _key(e) {
     if (e.key !== 'Escape') return;
-    if (this._overlay) this._close();
+    if (this._overlay && this._overlay.kind === 'planedit') this._peLeave();
+    else if (this._overlay) this._close();
     else if (this._edit) this._endEdit();
     else this._unflip();
   }
@@ -975,10 +990,19 @@ class MosaicStart extends HTMLElement {
   // Over on the vertical axis (the live faces flip on the horizontal one).
   _turn(el, midway) {
     if (matchMedia('(prefers-reduced-motion: reduce)').matches || !el.animate) return midway();
-    el.animate([{ transform: 'perspective(600px) rotateY(0deg)' }, { transform: 'perspective(600px) rotateY(90deg)' }], { duration: 160, easing: 'ease-in' }).finished.then(() => {
+    // Lifted a little, turned edge-on (darkening as it goes), then the other
+    // side comes round: slow enough to read as a card turning over.
+    el.style.zIndex = '3';
+    el.animate([
+      { transform: 'perspective(900px) rotateY(0deg) scale(1)', filter: 'brightness(1)' },
+      { transform: 'perspective(900px) rotateY(90deg) scale(.92)', filter: 'brightness(.6)' },
+    ], { duration: 260, easing: 'cubic-bezier(.55,0,1,.45)' }).finished.then(() => {
       midway();
-      return el.animate([{ transform: 'perspective(600px) rotateY(-90deg)' }, { transform: 'perspective(600px) rotateY(0deg)' }], { duration: 220, easing: 'cubic-bezier(.1,.9,.2,1)' }).finished;
-    }).catch(() => midway());
+      return el.animate([
+        { transform: 'perspective(900px) rotateY(-90deg) scale(.92)', filter: 'brightness(.6)' },
+        { transform: 'perspective(900px) rotateY(0deg) scale(1)', filter: 'brightness(1)' },
+      ], { duration: 380, easing: 'cubic-bezier(.15,.85,.3,1)' }).finished;
+    }).catch(() => midway()).finally(() => (el.style.zIndex = ''));
   }
 
   _paintBack(t) {
@@ -1452,7 +1476,7 @@ class MosaicStart extends HTMLElement {
   }
 }
 
-Object.assign(MosaicStart.prototype, settingsMethods, artMethods);
+Object.assign(MosaicStart.prototype, settingsMethods, artMethods, planEditMethods);
 
 class MosaicStrategy extends HTMLElement {
   // The same settings for a whole Mosaic dashboard ("Edit dashboard").
