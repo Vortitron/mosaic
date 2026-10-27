@@ -140,6 +140,10 @@ button { font: inherit; color: inherit; background: none; border: 0; padding: 0;
 .askbar input { flex: 1 1 auto; font: inherit; font-size: 17px; padding: 8px 10px; background: var(--bg); color: var(--fg); border: 2px solid var(--line); outline: none; min-width: 0; }
 .askbar input:focus { border-color: var(--accent); }
 .askbar button { width: 46px; background: var(--accent); color: #fff; font-size: 20px; }
+.askbar .mic { background: none; color: var(--fg); border: 2px solid var(--line); display: flex; align-items: center; justify-content: center; }
+.askbar .mic.on { background: var(--accent); border-color: var(--accent); color: #fff; }
+.ring.listening .outer { animation: listen 0.9s ease-in-out infinite alternate; transform-origin: 50% 50%; }
+@keyframes listen { from { stroke-width: 5; } to { stroke-width: 11; } }
 
 .jump { background: rgba(0,0,0,.88); justify-content: center; align-items: center; }
 :host(.light) .jump { background: rgba(255,255,255,.92); }

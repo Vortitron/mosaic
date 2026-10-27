@@ -11,6 +11,8 @@
 // assistant:              # false hides it
 //   agent_id: conversation.claude   # default: the home's preferred Assist pipeline
 //   name: Claude
+//   voice: true                     # a microphone, when the pipeline has speech-to-text
+//   speak: true                     # answers to spoken questions are spoken back (text-to-speech)
 // groups:                 # leave out and the card lays the home out itself
 //   - name: downstairs
 //     tiles:
@@ -27,12 +29,15 @@ import {
 } from './model.js';
 import { Conversation, resolveAgent } from './assistant.js';
 import { MosaicStartEditor } from './editor.js';
+import { VoiceRun, canListen } from './voice.js';
 
-const VERSION = '0.5.0';
+const VERSION = '0.6.0';
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
 const reduced = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
 const ON = ['on', 'open', 'opening', 'unlocked', 'playing', 'home', 'heat', 'cool', 'heat_cool', 'auto', 'cleaning'];
 
+// Material Design's microphone (Pictogrammers, Apache-2.0).
+const MIC = '<svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true"><path fill="currentColor" d="M12,2A3,3 0 0,1 15,5V11A3,3 0 0,1 12,14A3,3 0 0,1 9,11V5A3,3 0 0,1 12,2M19,11C19,14.53 16.39,17.44 13,17.93V21H11V17.93C7.61,17.44 5,14.53 5,11H7A5,5 0 0,0 12,16A5,5 0 0,0 17,11H19Z"/></svg>';
 const ringSvg = (cls = '') => `<svg class="ring ${cls}" viewBox="0 0 100 100" aria-hidden="true"><circle class="outer" cx="50" cy="50" r="40"/><circle class="inner" cx="50" cy="50" r="27"/></svg>`;
 
 function faceHtml(f) {
@@ -829,6 +834,7 @@ class MosaicStart extends HTMLElement {
   }
 
   _close() {
+    if (this._voice) this._voice.cancel();
     const prev = this._overlay && this._overlay.under;
     this._overlay = null;
     this._layer().innerHTML = '';
@@ -1076,7 +1082,7 @@ class MosaicStart extends HTMLElement {
     this._layer().innerHTML = `<div class="overlay assist" role="dialog" aria-label="${esc(name)}">
       <div class="apptitle"><button class="back" aria-label="back">&larr;</button>${esc(name)}</div>
       <div class="talk" aria-live="polite"></div>
-      <form class="askbar"><input type="text" enterkeyhint="send" autocomplete="off" placeholder="ask me anything" aria-label="ask ${esc(name)}"><button type="submit" aria-label="send">&rarr;</button></form>
+      <form class="askbar"><input type="text" enterkeyhint="send" autocomplete="off" placeholder="ask me anything" aria-label="ask ${esc(name)}">${this._agent && this._agent.listens && canListen() ? `<button type="button" class="mic" aria-label="speak to ${esc(name)}" aria-pressed="false">${MIC}</button>` : ''}<button type="submit" aria-label="send">&rarr;</button></form>
     </div>`;
     const ov = this._layer().firstElementChild;
     ov.querySelector('.back').addEventListener('click', () => this._close());
@@ -1088,9 +1094,47 @@ class MosaicStart extends HTMLElement {
       input.value = '';
       this._send(text);
     });
+    const mic = ov.querySelector('.mic');
+    if (mic) mic.addEventListener('click', () => (this._voice ? this._voice.stop() : this._listen()));
     this._renderTalk();
     if (prefill) this._send(prefill);
     else input.focus();
+  }
+
+  // A spoken question: Assist hears it, answers it, and says the answer.
+  _listen() {
+    const conv = this._conv;
+    const voice = new VoiceRun(this._hass, {
+      pipeline: this._agent.pipelineId,
+      conversationId: conv.id,
+      speak: this._agent.speaks,
+      on: {
+        state: (s) => {
+          this._voiceState = s;
+          this._renderTalk();
+        },
+        heard: (text) => {
+          conv.turns.push({ who: 'me', text });
+          this._renderTalk();
+        },
+        reply: (text, id) => {
+          conv.id = id || conv.id;
+          conv.turns.push({ who: 'it', text });
+          this._renderTalk();
+          this._refresh();
+        },
+        error: (text) => {
+          conv.turns.push({ who: 'it', text, error: true });
+          this._renderTalk();
+        },
+        done: () => {
+          if (this._voice === voice) this._voice = null;
+          this._renderTalk();
+        },
+      },
+    });
+    this._voice = voice;
+    voice.start();
   }
 
   async _send(text) {
@@ -1105,8 +1149,16 @@ class MosaicStart extends HTMLElement {
     const talk = this._layer().querySelector('.assist .talk');
     if (!talk) return;
     const name = (this._agent && this._agent.name) || 'Assist';
-    const busy = this._conv.busy;
-    const hero = `<div class="hero">${ringSvg(busy ? 'thinking' : '')}${this._conv.turns.length ? '' : `<div class="hello">What can I do for you?</div>`}</div>`;
+    const v = this._voice ? this._voiceState : 'idle';
+    const busy = this._conv.busy || v === 'thinking';
+    const ring = v === 'listening' ? 'listening' : busy ? 'thinking' : '';
+    const hello = v === 'listening' ? 'Listening…' : this._conv.turns.length ? '' : 'What can I do for you?';
+    const hero = `<div class="hero">${ringSvg(ring)}${hello ? `<div class="hello">${hello}</div>` : ''}</div>`;
+    const mic = this._layer().querySelector('.assist .mic');
+    if (mic) {
+      mic.classList.toggle('on', v === 'listening');
+      mic.setAttribute('aria-pressed', String(v === 'listening'));
+    }
     talk.innerHTML = hero + this._conv.turns.map((t) => `<div class="turn ${t.who} ${t.error ? 'err' : ''}">${esc(t.text)}</div>`).join('') + (busy ? `<div class="turn it" aria-label="${esc(name)} is thinking">…</div>` : '');
     talk.scrollTop = talk.scrollHeight;
   }

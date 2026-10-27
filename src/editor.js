@@ -25,6 +25,8 @@ const SCHEMA = [
   { name: 'show_assistant', selector: { boolean: {} } },
   { name: 'agent_id', selector: { conversation_agent: {} } },
   { name: 'assistant_name', selector: { text: {} } },
+  { name: 'voice', selector: { boolean: {} } },
+  { name: 'speak', selector: { boolean: {} } },
 ];
 
 const LABELS = {
@@ -37,6 +39,8 @@ const LABELS = {
   show_assistant: 'Show the assistant',
   agent_id: 'Assistant (empty: your preferred Assist pipeline)',
   assistant_name: 'Assistant’s name (empty: worked out from the agent)',
+  voice: 'A microphone, when the Assist pipeline has speech-to-text',
+  speak: 'Speak answers to spoken questions, when it has text-to-speech',
 };
 
 export class MosaicStartEditor extends HTMLElement {

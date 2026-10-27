@@ -13,6 +13,8 @@ export function toForm(config) {
     show_assistant: a !== false,
     agent_id: (a && a.agent_id) || '',
     assistant_name: (a && a.name) || '',
+    voice: !(a && a.voice === false),
+    speak: !(a && a.speak === false),
   };
 }
 
@@ -33,6 +35,8 @@ export function fromForm(config, form) {
     const assistant = {};
     if (form.agent_id) assistant.agent_id = form.agent_id;
     if (form.assistant_name) assistant.name = form.assistant_name;
+    if (form.voice === false) assistant.voice = false;
+    if (form.speak === false) assistant.speak = false;
     if (Object.keys(assistant).length) out.assistant = assistant;
     else delete out.assistant;
   }

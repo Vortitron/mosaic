@@ -3,22 +3,32 @@
 // Anthropic integration, or any agent using the Vome LLM API), so the card
 // itself never talks to an AI service or holds a key.
 
+// Which agent answers, and through which Assist pipeline: the pipeline is
+// what can listen (speech-to-text) and speak (text-to-speech).
 export async function resolveAgent(hass, conf = {}) {
   let agentId = conf.agent_id || null;
-  let pipelineName = null;
-  if (!agentId) {
-    try {
-      const res = await hass.callWS({ type: 'assist_pipeline/pipeline/list' });
-      const p = res.pipelines.find((x) => x.id === res.preferred_pipeline) || res.pipelines[0];
-      if (p) {
-        agentId = p.conversation_engine || null;
-        pipelineName = p.name || null;
-      }
-    } catch (e) {
-      /* no assist_pipeline: Assist's default agent answers */
+  let pipeline = null;
+  try {
+    const res = await hass.callWS({ type: 'assist_pipeline/pipeline/list' });
+    const preferred = res.pipelines.find((x) => x.id === res.preferred_pipeline) || res.pipelines[0] || null;
+    if (agentId) {
+      // A chosen agent: the pipeline that uses it (one that can listen, if any).
+      const using = res.pipelines.filter((p) => p.conversation_engine === agentId);
+      pipeline = using.find((p) => p.stt_engine) || using[0] || null;
+    } else {
+      pipeline = preferred;
+      agentId = (pipeline && pipeline.conversation_engine) || null;
     }
+  } catch (e) {
+    /* no assist_pipeline: Assist's default agent answers, and nothing listens */
   }
-  return { agentId, name: conf.name || agentName(hass, agentId, pipelineName) };
+  return {
+    agentId,
+    name: conf.name || agentName(hass, agentId, pipeline && pipeline.name),
+    pipelineId: pipeline ? pipeline.id : null,
+    listens: !!(pipeline && pipeline.stt_engine) && conf.voice !== false,
+    speaks: !!(pipeline && pipeline.tts_engine) && conf.speak !== false,
+  };
 }
 
 export function agentName(hass, agentId, pipelineName) {

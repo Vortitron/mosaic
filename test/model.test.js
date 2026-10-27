@@ -145,3 +145,27 @@ test('the editor round-trips a config and keeps what it does not show', () => {
   assert.equal(off.theme, 'dark');
   assert.deepEqual(off.groups, conf.groups);
 });
+
+import { pcmFrame } from '../src/voice.js';
+import { resolveAgent } from '../src/assistant.js';
+
+test('audio goes to Assist as 16-bit little-endian PCM behind the handler byte', () => {
+  const f = pcmFrame(7, new Float32Array([0, 1, -1, 2]));
+  assert.equal(f.length, 1 + 4 * 2);
+  assert.equal(f[0], 7);
+  const v = new DataView(f.buffer);
+  assert.deepEqual([1, 3, 5, 7].map((o) => v.getInt16(o, true)), [0, 32767, -32768, 32767]); // clipped, not wrapped
+});
+
+test('the assistant listens only when its pipeline has speech-to-text', async () => {
+  const pipes = (list, preferred) => ({ ...hass, callWS: async () => ({ pipelines: list, preferred_pipeline: preferred }) });
+  const p1 = { id: 'p1', name: 'Home Assistant', conversation_engine: 'conversation.claude', stt_engine: null, tts_engine: null };
+  const p2 = { id: 'p2', name: 'Voice', conversation_engine: 'conversation.claude', stt_engine: 'stt.whisper', tts_engine: 'tts.piper' };
+  let a = await resolveAgent(pipes([p1, p2], 'p1'));
+  assert.deepEqual([a.agentId, a.pipelineId, a.listens, a.speaks, a.name], ['conversation.claude', 'p1', false, false, 'Claude']);
+  // Choosing the agent finds the pipeline that can hear for it.
+  a = await resolveAgent(pipes([p1, p2], 'p1'), { agent_id: 'conversation.claude' });
+  assert.deepEqual([a.pipelineId, a.listens, a.speaks], ['p2', true, true]);
+  a = await resolveAgent(pipes([p1, p2], 'p1'), { agent_id: 'conversation.claude', voice: false, speak: false });
+  assert.deepEqual([a.listens, a.speaks], [false, false]);
+});
