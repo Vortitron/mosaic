@@ -191,28 +191,42 @@ export function stackSvg(levels, hass, entitiesByArea, { highlight = null, mode 
   const [a, b, c, d] = [Math.cos(t), k * Math.sin(t), -Math.sin(t), k * Math.cos(t)];
   const project = (x, y) => [a * (x - cx) + c * (y - cy), b * (x - cx) + d * (y - cy)];
   const corners = [[box.x1, box.y1], [box.x2, box.y1], [box.x1, box.y2], [box.x2, box.y2]].map(([x, y]) => project(x, y));
-  const xs = corners.map((p) => p[0]);
   const ys = corners.map((p) => p[1]);
   const floorH = Math.max(...ys) - Math.min(...ys);
   const gap = floorH * STACK.gap;
   const n = levels.length;
   const pad = 0.8;
   const grow = Math.max(1, box.w / 11); // a big house: bigger floor names
-  const NAMES = 4.2 * grow; // room on the left for the floors' names
-  const vb = [Math.min(...xs) - pad - NAMES, Math.min(...ys) - pad, Math.max(...xs) - Math.min(...xs) + pad * 2 + NAMES, floorH + gap * (n - 1) + pad * 2];
+  const nameSize = 0.55 * grow;
+  // The picture is cropped to what is drawn: each floor's own outline (a
+  // small loft or cellar doesn't get the whole house's margin) and its name.
+  const ext = { x1: Infinity, y1: Infinity, x2: -Infinity, y2: -Infinity };
+  const spot = levels.map((l, i) => {
+    const own = bbox(l.rooms);
+    const pts = [[own.x1, own.y1], [own.x2, own.y1], [own.x1, own.y2], [own.x2, own.y2]].map(([x, y]) => project(x, y));
+    const left = pts.reduce((p, q) => (q[0] < p[0] ? q : p));
+    const dy = i * gap;
+    const nameW = String(l.name || '').length * nameSize * 0.52;
+    ext.x1 = Math.min(ext.x1, left[0] - 0.4 - nameW);
+    ext.x2 = Math.max(ext.x2, ...pts.map((p) => p[0]));
+    ext.y1 = Math.min(ext.y1, ...pts.map((p) => p[1] + dy), left[1] + dy - nameSize);
+    ext.y2 = Math.max(ext.y2, ...pts.map((p) => p[1] + dy), left[1] + dy + nameSize);
+    return { own, left };
+  });
+  const vb = [ext.x1 - pad, ext.y1 - pad, ext.x2 - ext.x1 + pad * 2, ext.y2 - ext.y1 + pad * 2];
   // Bottom floor first, so each floor up is drawn over the one below it.
   const layers = levels.map((l, i) => ({ l, i })).reverse().map(({ l, i }) => {
     const dy = i * gap;
     const { shapes, marks } = levelParts(l, hass, entitiesByArea, { highlight, mode, slab: true, who });
-    // The floor's name off its left-hand corner, clear of the floor above.
-    const leftCorner = corners.reduce((p, q) => (q[0] < p[0] ? q : p));
+    // The floor's name off its own left-hand corner.
+    const leftCorner = spot[i].left;
     // Where this floor is, fixed: what the pointer is tested against, so
     // lifting the floor under it can't move it out from under the pointer.
-    const own = bbox(l.rooms);
+    const own = spot[i].own;
     const hit = [[own.x1, own.y1], [own.x2, own.y1], [own.x2, own.y2], [own.x1, own.y2]].map(([x, y]) => project(x, y)).map(([x, y]) => `${x.toFixed(2)},${(y + dy).toFixed(2)}`).join(' ');
     const key = l.key || '';
     return `<g class="lift${hot !== null && hot === key ? ' hot' : ''}" data-level="${esc(key)}" data-hit="${hit}"><g transform="translate(0 ${dy.toFixed(2)}) matrix(${[a, b, c, d].map((v) => v.toFixed(4)).join(' ')} ${(-a * cx - c * cy).toFixed(3)} ${(-b * cx - d * cy).toFixed(3)})">${shapes}</g>`
-      + `<text class="floorname" x="${(leftCorner[0] - 0.4).toFixed(2)}" y="${(leftCorner[1] + dy).toFixed(2)}" font-size="${(0.55 * grow).toFixed(2)}">${esc(l.name)}</text>`
+      + `<text class="floorname" x="${(leftCorner[0] - 0.4).toFixed(2)}" y="${(leftCorner[1] + dy).toFixed(2)}" font-size="${nameSize.toFixed(2)}">${esc(l.name)}</text>`
       + `${marks.map((m) => { const [px, py] = project(m.x, m.y); return markText(m, px, py + dy, 0.85); }).join('')}</g>`;
   });
   return `<svg class="plan stacked${hot !== null && levels.some((l) => (l.key || '') === hot) ? ' hashot' : ''}" viewBox="${vb.map((v) => v.toFixed(2)).join(' ')}" preserveAspectRatio="xMidYMid meet" role="img" aria-label="${esc(title)}">${layers.join('')}</svg>`;

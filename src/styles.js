@@ -37,8 +37,7 @@ button { font: inherit; color: inherit; background: none; border: 0; padding: 0;
 .tabpane.settings.on { display: flex; }
 .app.intab { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; position: relative; }
 .app.intab .pivots button { font-size: 22px; }
-.desk .app.intab .pivots { padding-left: 32px; }
-.desk .app.intab .ppage { padding-left: 32px; }
+.desk .app.intab .pivots, .desk .app.intab .ppage { padding-left: 16px; }
 .app.intab.wideapp > .art { top: 70px; }
 
 /* --- panorama: Start and the A-Z list side by side ------------------------- */
@@ -212,7 +211,7 @@ button { font: inherit; color: inherit; background: none; border: 0; padding: 0;
 .art .liveplan svg { flex: 1 1 auto; min-height: 0; height: 100%; }
 .plan { width: 100%; height: auto; display: block; overflow: visible; }
 .housepage { height: 100%; display: flex; flex-direction: column; padding: 8px var(--pad) var(--pad); }
-.desk .housepage { padding: 14px 32px 24px; }
+.desk .housepage { padding: 14px 16px 24px; }
 .housebar { flex: 0 0 auto; display: flex; align-items: baseline; flex-wrap: wrap; gap: 6px 16px; }
 .housebar .planmodes { margin: 0; }
 .housefill { flex: 1 1 auto; }
