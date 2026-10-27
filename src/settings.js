@@ -30,17 +30,33 @@ function text(s, placeholders = {}) {
 }
 
 export const settingsMethods = {
+  // Settings is a tab of its own; the settings tile (and back, from a
+  // device opened in settings) goes there.
   _openSettings(pivot = 'attention') {
     if (!this._canManage()) return;
+    this._close();
+    this._goTab('settings', pivot);
+  },
+
+  _showSettingsPivot(pivot) {
+    const app = this.shadowRoot.querySelector('.tabpane.settings .app.settings');
+    if (!app) return;
+    const pages = app.querySelector('.ppages');
+    const i = Math.max(0, [...pages.children].findIndex((p) => p.dataset.p === pivot));
+    pages.scrollTo({ left: pages.children[i].offsetLeft - pages.offsetLeft, behavior: 'auto' });
+  },
+
+  _buildSettings(pivot = 'attention') {
+    if (!this._canManage()) return;
     this._ensureStore();
-    this._overlay = { kind: 'settings', pivot };
+    this._settingsPivot = pivot;
+    const host = this.shadowRoot.querySelector('.tabpane.settings');
     const pivots = [
       ['attention', 'needs you'],
       ['devices', 'devices'],
       ['integrations', 'integrations'],
     ];
-    this._layer().innerHTML = `<div class="overlay app settings ${this.shadowRoot.querySelector('.root').classList.contains('desk') ? 'wideapp' : ''}" role="dialog" aria-label="settings">
-      <div class="apptitle"><button class="back" aria-label="back">&larr;</button><span>settings</span></div>
+    host.innerHTML = `<div class="app settings intab ${this.shadowRoot.querySelector('.root').classList.contains('desk') ? 'wideapp' : ''}" aria-label="settings">
       <div class="pivots" role="tablist">${pivots.map(([p, label], i) => `<button role="tab" data-i="${i}" data-p="${p}">${label}</button>`).join('')}</div>
       <div class="ppages">
         <div class="ppage" data-p="attention"><div class="plist"></div></div>
@@ -49,8 +65,7 @@ export const settingsMethods = {
       </div>
       <div class="art" aria-hidden="true"></div>
     </div>`;
-    const app = this._layer().firstElementChild;
-    app.querySelector('.back').addEventListener('click', () => this._close());
+    const app = host.firstElementChild;
     const pages = app.querySelector('.ppages');
     const heads = [...app.querySelectorAll('.pivots button')];
     const show = (i, smooth) => pages.scrollTo({ left: pages.children[i].offsetLeft - pages.offsetLeft, behavior: smooth && !matchMedia('(prefers-reduced-motion: reduce)').matches ? 'smooth' : 'auto' });
@@ -58,7 +73,7 @@ export const settingsMethods = {
     pages.addEventListener('scroll', () => {
       const i = Math.round(pages.scrollLeft / Math.max(1, pages.children[0].clientWidth));
       heads.forEach((b, j) => b.classList.toggle('on', j === i));
-      if (this._overlay && this._overlay.kind === 'settings') this._overlay.pivot = heads[i] && heads[i].dataset.p;
+      if (heads[i]) this._settingsPivot = heads[i].dataset.p;
     });
     for (const input of app.querySelectorAll('.ptools .search')) input.addEventListener('input', () => this._renderSettings());
     app.addEventListener('click', (e) => this._settingsClick(e));
@@ -73,8 +88,8 @@ export const settingsMethods = {
     const start = Math.max(0, pivots.findIndex(([p]) => p === pivot));
     heads[start].classList.add('on');
     requestAnimationFrame(() => show(start, false));
+    app.querySelector('.art').innerHTML = this._artFor({ kind: 'settings' });
     this._renderSettings();
-    this._paintArt();
   },
 
   _canManage() {
@@ -83,7 +98,7 @@ export const settingsMethods = {
   },
 
   _renderSettings() {
-    const app = this._layer().querySelector('.app.settings');
+    const app = this.shadowRoot.querySelector('.tabpane.settings .app.settings');
     if (!app) return;
     const store = this._store && this._store.data;
     const put = (p, html) => {
@@ -205,7 +220,7 @@ export const settingsMethods = {
       }
     }
     if (!row) return;
-    if (row.dataset.device) return this._openApp({ kind: 'device', device: row.dataset.device, under: { kind: 'settings', pivot: this._overlay.pivot || 'devices' } });
+    if (row.dataset.device) return this._openApp({ kind: 'device', device: row.dataset.device, under: { kind: 'settings', pivot: this._settingsPivot || 'devices' } });
     if (row.dataset.k === 'integration' || row.dataset.k === 'entry') return this._openIntegration(row.dataset.domain);
     if (row.dataset.flow) return this._runFlow({ flowId: row.dataset.flow });
     if (row.dataset.repairs) return navigate('/config/repairs');

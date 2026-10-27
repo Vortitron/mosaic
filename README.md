@@ -17,8 +17,9 @@ A live-tile Start screen for Home Assistant, after Windows Phone 10.
 - **Rooms are apps:** tap a room tile for a full-screen room with pivots (lights, power, climate, media, security...) that you swipe between. Tapping a name opens Home Assistant's own dialog.
 - **The A–Z list:** swipe left (on a desktop it sits beside the tiles) for everything in the house, with search and a letter jump list. It lists **devices** (a smart plug is one row, not five sensors; tap it to open it like a room) or every **entity**: switch at the top, and each viewer's choice is remembered.
 - **An assistant where Cortana was:** a tile and the search box talk to your home's Assist agent. If that agent is Claude (the Anthropic integration), the tile says Claude. When the Assist pipeline has speech-to-text there is a microphone too, and with text-to-speech, spoken questions get spoken answers. It all goes through Home Assistant's own pipeline (Whisper, Home Assistant Cloud, whatever you set up there), never a browser speech service.
-- **The house, drawn:** Start shows your floor plan, its floors stacked and tilted, coloured by which lights are on, the temperature or the humidity. A *people* view shows who is where (see below). Tap a room to open it.
-- **Settings, device first:** admins get a *settings* tile that replaces Home Assistant's Integrations, Devices, Entities and Helpers pages. Find the thing first, not the integration it came from: devices by room (newly found ones at the top), every integration A–Z with its logo, rooms by floor, and what needs you (failed set-ups, repairs, updates). Rename, move, hide, add helpers and integrations without a page load.
+- **Three tabs:** *start*, *house* and *settings* along the top, as pivot headers. Tap the one you're on to go back to its top.
+- **The house, drawn:** the *house* tab is your floor plan, coloured by which lights are on, the temperature or the humidity. On a wide screen the floors are stacked and tilted, and pointing at one lifts it; on a phone they sit flat, one above the other, as big as the screen allows. A *people* view shows who is where (see below). Tap a room to open it.
+- **Settings, device first:** admins get a *settings* tab (and tile) that replaces Home Assistant's Integrations, Devices, Entities and Helpers pages. Find the thing first, not the integration it came from: devices by room (newly found ones at the top), every integration A–Z with its logo, rooms by floor, and what needs you (failed set-ups, repairs, updates). Rename, move, hide, add helpers and integrations without a page load.
 - **No setup:** with no config, Mosaic lays your home out from its floors and areas.
 - **Customise it like a phone:** hold a tile and Start comes loose. Drag tiles to move them (drag to the top or bottom edge and Start scrolls), tap ↘ to resize, ✕ to unpin, type over a group's name to rename it, *+ group* for a new one, then *done*. Hold anything in the list to *pin to start*. *automatic* goes back to the layout Mosaic picks. Changes are saved into the dashboard, so only admins can make them.
 
@@ -63,10 +64,10 @@ assistant:              # false hides the assistant
   speak: true                    # spoken answers to spoken questions
 tap: flip               # flip: a tap shows the controls on the back | act: a tap toggles or opens
 tile_style: soft        # soft (a gentle wash) | flat (solid accent, the old look)
-settings: true          # false hides the settings tile (it is only ever shown to admins)
+settings: true          # false hides the settings tab and tile (they are only ever shown to admins)
 brand_icons: true       # false: integrations get a letter instead of their logo from brands.home-assistant.io
-show_plan: true         # false: no floor plan on Start
-plan_view: stack        # stack (floors tilted on top of each other) | flat
+show_plan: true         # false: no house tab
+plan_view: stack        # stack (floors tilted on top of each other, on wide screens) | flat
 floorplan_from: my-plan # a dashboard whose config holds a floor plan (see below)
 floorplan:              # or the plan itself; false turns plans off
 groups:                 # leave out to have Mosaic lay the home out itself

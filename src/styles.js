@@ -22,7 +22,24 @@ export const CSS = `
 * { box-sizing: border-box; }
 button { font: inherit; color: inherit; background: none; border: 0; padding: 0; cursor: pointer; }
 :focus-visible { outline: 2px solid var(--fg); outline-offset: 2px; }
-.root { position: relative; height: var(--h, 640px); }
+.root { position: relative; height: var(--h, 640px); display: flex; flex-direction: column; }
+
+/* --- tabs: start, the house, settings (Metro pivot headers along the top) --- */
+.hub { flex: 0 0 auto; display: none; gap: 24px; padding: 10px var(--pad) 2px; overflow-x: auto; scrollbar-width: none; white-space: nowrap; }
+.hub::-webkit-scrollbar { display: none; }
+.hubbed .hub { display: flex; }
+.hub button { font-size: 26px; font-weight: 300; text-transform: lowercase; color: var(--fg2); transition: color 200ms; line-height: 1.2; }
+.hub button.on { color: var(--fg); }
+.desk .hub { padding: 16px 16px 0; gap: 32px; }
+.editing .hub { visibility: hidden; }
+.tabpane { flex: 1 1 auto; min-height: 0; display: none; position: relative; }
+.tabpane.on { display: block; }
+.tabpane.settings.on { display: flex; }
+.app.intab { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; position: relative; }
+.app.intab .pivots button { font-size: 22px; }
+.desk .app.intab .pivots { padding-left: 32px; }
+.desk .app.intab .ppage { padding-left: 32px; }
+.app.intab.wideapp > .art { top: 70px; }
 
 /* --- panorama: Start and the A-Z list side by side ------------------------- */
 .pan { display: flex; height: 100%; overflow-x: auto; overflow-y: hidden; scroll-snap-type: x mandatory; scrollbar-width: none; overscroll-behavior-x: contain; }
@@ -194,7 +211,18 @@ button { font: inherit; color: inherit; background: none; border: 0; padding: 0;
 .art .liveplan .storey { max-width: none; flex: 1 1 0; min-height: 0; display: flex; flex-direction: column; }
 .art .liveplan svg { flex: 1 1 auto; min-height: 0; height: 100%; }
 .plan { width: 100%; height: auto; display: block; overflow: visible; }
-.planart { width: auto !important; flex: 1 1 340px; max-width: 960px; }
+.housepage { height: 100%; display: flex; flex-direction: column; padding: 8px var(--pad) var(--pad); }
+.desk .housepage { padding: 14px 32px 24px; }
+.housebar { flex: 0 0 auto; display: flex; align-items: baseline; flex-wrap: wrap; gap: 6px 16px; }
+.housebar .planmodes { margin: 0; }
+.housefill { flex: 1 1 auto; }
+.sketchnote { color: var(--fg2); font-size: 13px; }
+.housepage > .liveplan { flex: 1 1 auto; min-height: 0; display: flex; justify-content: center; align-items: center; }
+.housepage > .liveplan svg { width: 100%; height: 100%; max-height: 100%; }
+.housepage > .whobox { flex: 0 0 auto; }
+.housepage > .liveplan.tall { flex-direction: column; flex-wrap: nowrap; align-items: stretch; justify-content: flex-start; gap: 10px; }
+.housepage > .liveplan.tall .storey { flex: 1 1 0 !important; min-height: 0; max-width: none; display: flex; flex-direction: column; }
+.housepage > .liveplan.tall .storey svg { flex: 1 1 auto; min-height: 0; height: 100%; }
 .plan .wall { fill: none; stroke: var(--fg2); stroke-width: .14; opacity: .55; }
 .plan .wall.out { stroke-dasharray: .35 .25; opacity: .35; }
 .plan .room rect { fill: color-mix(in srgb, var(--fg) 5%, transparent); transition: fill 300ms; }
@@ -219,10 +247,11 @@ button { font: inherit; color: inherit; background: none; border: 0; padding: 0;
 .planmodes button { font-size: 14px; color: var(--fg2); text-transform: lowercase; }
 .planmodes button.on { color: var(--fg); border-bottom: 2px solid var(--accent); }
 /* The house stacked: each floor turned and flattened, the top one highest.
-   Hovering a floor lifts it and fades the others. */
+   Pointing at a floor lifts it and fades the others (which floor is
+   worked out from where the floors sit, not from what is under the pointer). */
 .plan.stacked .lift { transition: transform 300ms cubic-bezier(.1,.9,.2,1), opacity 300ms; }
-.plan.stacked:hover .lift { opacity: .35; }
-.plan.stacked .lift:hover { opacity: 1; transform: translate(0, -0.5px); }
+.plan.stacked.hashot .lift { opacity: .35; }
+.plan.stacked .lift.hot { opacity: 1; transform: translate(0, -0.5px); }
 .plan .floorname { fill: var(--fg2); text-anchor: end; dominant-baseline: central; text-transform: lowercase; }
 .plan .slab { fill: color-mix(in srgb, var(--fg) 10%, var(--bg)); stroke: var(--fg2); stroke-width: .1; opacity: .9; }
 
@@ -306,7 +335,7 @@ button { font: inherit; color: inherit; background: none; border: 0; padding: 0;
 .ghead { margin: 18px 0 6px; font-size: 14px; font-weight: 400; color: var(--accent2); text-transform: lowercase; }
 .ghead small { float: right; color: var(--fg2); font-size: 12px; }
 .ppage .ghead:first-child { margin-top: 4px; }
-.ptools { display: flex; gap: 8px; align-items: center; }
+.ptools { display: flex; gap: 8px; align-items: center; max-width: 560px; } /* as wide as the rows under it */
 .ptools .search { margin: 2px 0 10px; }
 .pbtn { flex: 0 0 auto; white-space: nowrap; border: 2px solid var(--fg); padding: 7px 12px; font-size: 15px; margin-bottom: 8px; }
 .mini { flex: 0 0 auto; border: 2px solid var(--line); padding: 4px 10px; font-size: 14px; margin-left: 6px; }

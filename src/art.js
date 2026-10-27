@@ -20,6 +20,17 @@ export function findPlan(node, depth = 0) {
   return null;
 }
 
+// Is x, y inside the polygon (a list of [x, y])? Even-odd rule.
+function inPoly(x, y, poly) {
+  let inside = false;
+  for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+    const [xi, yi] = poly[i];
+    const [xj, yj] = poly[j];
+    if (yi > y !== yj > y && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi) inside = !inside;
+  }
+  return inside;
+}
+
 export const artMethods = {
   // Where the plan comes from: this card's own floorplan, a dashboard named
   // in floorplan_from, or, for an admin, the first dashboard that has one.
@@ -55,7 +66,8 @@ export const artMethods = {
     if (!plan) return;
     this._plan = plan;
     this._planSig = null;
-    if (!this._edit) this._fillGroups();
+    this._fillHub();
+    if (this._tab === 'house') this._fillHouse();
     this._paintArt();
   },
 
@@ -121,7 +133,33 @@ export const artMethods = {
 
   // Every storey stacked into one tilted picture of the house.
   _stackHtml(highlight) {
-    return stackSvg(this._levels(), this._hass, entitiesByArea(this._hass), { highlight, mode: this._planMode(), who: this._whoNow() });
+    return stackSvg(this._levels(), this._hass, entitiesByArea(this._hass), { highlight, mode: this._planMode(), who: this._whoNow(), hot: this._hotLevel ?? null });
+  },
+
+  // Which floor of a stacked plan the mouse is over: the topmost whose
+  // resting outline holds the point. Set as classes, so nothing is redrawn,
+  // and remembered, so a redraw (a light going on) keeps it.
+  _planHover(e) {
+    if (e.pointerType && e.pointerType !== 'mouse') return;
+    const svg = e.target.closest && e.target.closest('svg.plan.stacked');
+    let hot = null;
+    if (svg) {
+      const ctm = svg.getScreenCTM();
+      if (ctm) {
+        const p = new DOMPoint(e.clientX, e.clientY).matrixTransform(ctm.inverse());
+        const lifts = [...svg.querySelectorAll('.lift[data-hit]')];
+        for (let i = lifts.length - 1; i >= 0 && hot === null; i--) {
+          const poly = lifts[i].dataset.hit.split(' ').map((v) => v.split(',').map(Number));
+          if (inPoly(p.x, p.y, poly)) hot = lifts[i].dataset.level;
+        }
+      }
+    }
+    if (hot === (this._hotLevel ?? null)) return;
+    this._hotLevel = hot;
+    for (const el of this.shadowRoot.querySelectorAll('svg.plan.stacked')) {
+      el.classList.toggle('hashot', hot !== null && el === svg);
+      for (const l of el.querySelectorAll('.lift')) l.classList.toggle('hot', hot !== null && el === svg && l.dataset.level === hot);
+    }
   },
 
   // A storey (or every storey) as live SVG. highlight picks out one room.
@@ -134,13 +172,24 @@ export const artMethods = {
     return levels.map((l) => `<figure class="storey" style="flex-grow:${bbox(l.rooms).w.toFixed(1)}">${levels.length > 1 || level === null ? `<figcaption>${esc(l.name)}</figcaption>` : ''}${levelSvg(l, this._hass, byArea, { highlight, labels, mode, who: this._whoNow() })}</figure>`).join('');
   },
 
-  // The Start screen's own picture of the house: a group of its own beside the tiles.
-  _startArtHtml() {
-    if (!this._plan || this._config.show_plan === false) return '';
-    const stack = this._config.plan_view !== 'flat';
-    const sketch = this._planIsSketch ? '<small> · a sketch of your rooms</small>' : '';
+  // The house tab: the plan as big as the screen allows, what it shows
+  // (lights, warmth, damp, people) along the top, who is where under it.
+  _fillHouse() {
+    const pane = this.shadowRoot.querySelector('.tabpane.house');
+    if (!pane) return;
+    if (!this._plan) {
+      pane.innerHTML = '';
+      return;
+    }
+    // A tilted house is wide: on a tall screen (a phone) the floors go flat,
+    // one above the other, each as wide as the screen.
+    const tall = pane.clientHeight > pane.clientWidth * 1.15;
+    this._houseTall = tall;
+    const stack = this._config.plan_view !== 'flat' && !tall;
+    const sketch = this._planIsSketch ? '<span class="sketchnote">a sketch of your rooms</span>' : '';
     const edit = this._canEdit() ? `<button class="link planedit-link" data-planedit="">${this._planIsSketch ? 'draw it properly' : 'edit the plan'}</button>` : '';
-    return `<section class="group planart" aria-label="the house"><h2>the house${sketch}</h2>${edit}${this._planModesHtml()}<div class="liveplan" data-plan="all"${stack ? ' data-stack="1"' : ''}>${this._planHtml({ labels: true, stack })}</div><div class="whobox">${this._whoListHtml()}</div></section>`;
+    pane.innerHTML = `<div class="housepage"><div class="housebar">${this._planModesHtml()}<span class="housefill"></span>${sketch}${edit}</div><div class="liveplan${tall ? ' tall' : ''}" data-plan="all"${stack ? ' data-stack="1"' : ''}>${this._planHtml({ labels: true, stack })}</div><div class="whobox">${this._whoListHtml()}</div></div>`;
+    this._planSig = null;
   },
 
   // Art for an app's empty side: the plan with this room picked out, or a
@@ -160,7 +209,8 @@ export const artMethods = {
       icon = 'mdi:devices';
     } else if (o.kind === 'settings') icon = 'mdi:cog-outline';
     else if (o.kind === 'integration') icon = 'mdi:puzzle-outline';
-    if (this._plan) {
+    // The plan beside a room or a device in one; the house has its own tab.
+    if (this._plan && area) {
       // Only the storey the room is on, when we know it.
       const lv = area ? this._levels().find((l) => l.rooms.some((r) => { const a = areaOfRoom(hass, r); return a && a.area_id === area; })) : null;
       return `<div class="liveplan" data-plan="${lv ? esc(lv.key) || 'main' : 'all'}" data-highlight="${esc(area || '')}">${this._planHtml({ level: lv ? lv.key : null, highlight: area })}</div>`;

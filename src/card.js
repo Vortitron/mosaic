@@ -44,7 +44,7 @@ import { artMethods } from './art.js';
 import { planEditMethods } from './plan-edit.js';
 import { locate } from './locator.js';
 
-const VERSION = '0.7.0-beta.11';
+const VERSION = '0.7.0-beta.12';
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
 const reduced = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
 const ON = ['on', 'open', 'opening', 'unlocked', 'playing', 'home', 'heat', 'cool', 'heat_cool', 'auto', 'cleaning'];
@@ -158,9 +158,9 @@ class MosaicStart extends HTMLElement {
   _onStore() {
     this._settingsInfo = null;
     this._refreshTiles();
+    if (this._tab === 'settings') this._renderSettings();
     const o = this._overlay;
     if (!o) return;
-    if (o.kind === 'settings') this._renderSettings();
     if (o.kind === 'integration') this._renderIntegration();
     if (o.kind === 'device' || o.kind === 'room') this._renderApp();
     if (o.kind === 'rooms') this._renderRooms();
@@ -226,6 +226,8 @@ class MosaicStart extends HTMLElement {
     this.style.setProperty('--accent', accentColour(this._config.accent));
     this.shadowRoot.innerHTML = `<style>${STYLES}</style>
       <div class="root">
+        <nav class="hub" role="tablist" aria-label="mosaic"></nav>
+        <div class="tabpane start on">
         <div class="pan">
           <div class="page start">
             <div class="groups"></div>
@@ -239,6 +241,9 @@ class MosaicStart extends HTMLElement {
             <div class="listbody"></div>
           </div>
         </div>
+        </div>
+        <div class="tabpane house"></div>
+        <div class="tabpane settings"></div>
         <div class="editbar" role="toolbar" aria-label="customise start">
           <button data-done="save">done</button><button data-done="auto">automatic</button><button data-done="cancel">cancel</button>
         </div>
@@ -246,7 +251,22 @@ class MosaicStart extends HTMLElement {
         <div class="layer"></div>
       </div>`;
     const root = this.shadowRoot;
+    this._tab = 'start';
     this._wireTiles(root.querySelector('.groups'));
+    root.querySelector('.hub').addEventListener('click', (e) => {
+      const b = e.target.closest('button[data-tab]');
+      if (b) this._goTab(b.dataset.tab);
+    });
+    root.querySelector('.tabpane.house').addEventListener('click', (e) => {
+      const pe = e.target.closest && e.target.closest('[data-planedit]');
+      if (pe) return this._openPlanEditor(pe.dataset.planedit || undefined);
+      this._planClick(e);
+    });
+    if (!this._hoverWired) {
+      this._hoverWired = true;
+      root.addEventListener('pointermove', (e) => this._planHover(e));
+      this.addEventListener('pointerleave', (e) => this._planHover({ pointerType: 'mouse', target: this }));
+    }
     root.querySelector('.layer').addEventListener('click', (e) => this._planClick(e));
     for (const b of root.querySelectorAll('.editbar button')) b.addEventListener('click', () => this._finishEdit(b.dataset.done));
     const groupsBox = root.querySelector('.groups');
@@ -291,8 +311,60 @@ class MosaicStart extends HTMLElement {
     this._setListMode(this._listMode(), false);
     this._wallpaper();
     this._fit();
+    this._fillHub();
     this._fillGroups();
     this._refresh();
+  }
+
+  // --- tabs: start, the house, settings ---------------------------------------
+
+  _tabs() {
+    const tabs = ['start'];
+    if (this._plan && this._config.show_plan !== false) tabs.push('house');
+    if (this._canManage()) tabs.push('settings');
+    return tabs;
+  }
+
+  // The headers along the top, Metro pivots: only when there is more than Start.
+  _fillHub() {
+    const hub = this.shadowRoot.querySelector('.hub');
+    if (!hub) return;
+    const tabs = this._tabs();
+    if (!tabs.includes(this._tab)) this._goTab('start');
+    const html = tabs.length > 1 ? tabs.map((t) => `<button role="tab" data-tab="${t}" aria-selected="${t === this._tab}" class="${t === this._tab ? 'on' : ''}">${t}</button>`).join('') : '';
+    if (hub.dataset.html !== html) {
+      hub.dataset.html = html;
+      hub.innerHTML = html;
+    }
+    this.shadowRoot.querySelector('.root').classList.toggle('hubbed', tabs.length > 1);
+  }
+
+  // Show a tab. Tapping the one that is showing goes back to its start
+  // (Start scrolls to the top; settings to needs you).
+  _goTab(tab, pivot) {
+    const root = this.shadowRoot;
+    if (this._edit && tab !== 'start') return;
+    const again = this._tab === tab;
+    this._tab = tab;
+    for (const p of root.querySelectorAll('.tabpane')) p.classList.toggle('on', p.classList.contains(tab));
+    for (const b of root.querySelectorAll('.hub button')) {
+      b.classList.toggle('on', b.dataset.tab === tab);
+      b.setAttribute('aria-selected', String(b.dataset.tab === tab));
+    }
+    this._unflip && this._unflip();
+    if (tab === 'start') {
+      if (again) {
+        const page = root.querySelector('.page.start');
+        if (page) page.scrollTo({ top: 0, behavior: reduced() ? 'auto' : 'smooth' });
+      }
+      this._fit();
+      this._wallpaper();
+    } else if (tab === 'house') {
+      this._fillHouse();
+    } else if (tab === 'settings') {
+      if (!root.querySelector('.tabpane.settings .app.settings')) this._buildSettings(pivot || 'attention');
+      else if (pivot || again) this._showSettingsPivot(pivot || 'attention');
+    }
   }
 
   // The tiles themselves. Called on render, when the automatic layout
@@ -317,7 +389,7 @@ class MosaicStart extends HTMLElement {
           return `<div class="tile ${size}${key === sel ? ' sel' : ''}" role="button" tabindex="0" data-key="${key}"><div class="faces"></div><div class="label"></div><div class="badge"></div>${handles}</div>`;
         })
         .join('')}</div></section>`)
-      .join('') + (this._edit ? '<button class="addgroup">+ group</button>' : this._startArtHtml());
+      .join('') + (this._edit ? '<button class="addgroup">+ group</button>' : '');
     this._tiles = new Map();
     for (const el of box.querySelectorAll('.tile')) {
       const [gi, ti] = el.dataset.key.split('.').map(Number);
@@ -393,6 +465,10 @@ class MosaicStart extends HTMLElement {
   _fit() {
     const root = this.shadowRoot.querySelector('.root');
     if (!root) return;
+    if (this._tab === 'house') {
+      const pane = this.shadowRoot.querySelector('.tabpane.house');
+      if (pane && (pane.clientHeight > pane.clientWidth * 1.15) !== this._houseTall) this._fillHouse();
+    }
     const W = this.clientWidth || window.innerWidth;
     const wide = W >= 900;
     root.classList.toggle('desk', wide);
@@ -861,6 +937,7 @@ class MosaicStart extends HTMLElement {
     const target = await this._saveTarget();
     if (target.error) return this._toast(target.error);
     this._edit = { groups: JSON.parse(JSON.stringify(this._groups())), sel: key };
+    this._goTab('start');
     this.shadowRoot.querySelector('.root').classList.add('editing');
     this._fillGroups();
   }
@@ -1126,7 +1203,7 @@ class MosaicStart extends HTMLElement {
       // A question asked from inside a room goes back to the room.
       if (prev.kind === 'room' || prev.kind === 'device') this._openApp(prev);
       else if (prev.kind === 'assist') this._openAssist();
-      else if (prev.kind === 'settings') this._openSettings(prev.pivot);
+      else if (prev.kind === 'settings') this._goTab('settings', prev.pivot);
       else if (prev.kind === 'integration') this._openIntegration(prev.domain, prev.under || null);
       else if (prev.kind === 'rooms') this._openRooms(null, prev.under || null);
     }

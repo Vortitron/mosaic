@@ -57,7 +57,7 @@ const SP = process.env.SP || '/tmp';
   console.log('back to:', await card.evaluate((el) => el._overlay.kind));
   await card.evaluate((el) => el.shadowRoot.querySelector('.app .back').click());
   await page.waitForTimeout(500);
-  console.log('back to:', await card.evaluate((el) => el._overlay && el._overlay.kind));
+  console.log('back to:', await card.evaluate((el) => (el._overlay ? el._overlay.kind : `tab:${el._tab}`)));
   // Integrations: letters and logos.
   await card.evaluate((el) => { el._close(); el._openSettings('integrations'); });
   await page.waitForTimeout(2500);

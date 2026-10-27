@@ -71,7 +71,7 @@ const W = +(process.env.W || 390);
   // Back goes to settings.
   await pick('.app .back');
   await page.waitForTimeout(400);
-  assert.equal(await card.evaluate((el) => el._overlay && el._overlay.kind), 'settings');
+  assert.equal(await card.evaluate((el) => (el._overlay ? el._overlay.kind : `tab:${el._tab}`)), 'tab:settings');
   // An integration's page.
   await card.evaluate((el) => el.shadowRoot.querySelector('.pivots [data-p="integrations"]').click());
   await page.waitForTimeout(500);

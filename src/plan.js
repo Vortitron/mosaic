@@ -182,7 +182,7 @@ export function levelSvg(level, hass, entitiesByArea, opts = {}) {
 // (an isometric view), the top floor highest and drawn last, the room names
 // upright over their rooms. One SVG, so it stays sharp and fits exactly.
 export const STACK = { turn: -32, flatten: 0.52, gap: 0.62 };
-export function stackSvg(levels, hass, entitiesByArea, { highlight = null, mode = 'lights', title = 'the house', who = [] } = {}) {
+export function stackSvg(levels, hass, entitiesByArea, { highlight = null, mode = 'lights', title = 'the house', who = [], hot = null } = {}) {
   const box = bbox(levels.flatMap((l) => l.rooms));
   const cx = box.x1 + box.w / 2;
   const cy = box.y1 + box.h / 2;
@@ -206,9 +206,14 @@ export function stackSvg(levels, hass, entitiesByArea, { highlight = null, mode 
     const { shapes, marks } = levelParts(l, hass, entitiesByArea, { highlight, mode, slab: true, who });
     // The floor's name off its left-hand corner, clear of the floor above.
     const leftCorner = corners.reduce((p, q) => (q[0] < p[0] ? q : p));
-    return `<g class="lift"><g transform="translate(0 ${dy.toFixed(2)}) matrix(${[a, b, c, d].map((v) => v.toFixed(4)).join(' ')} ${(-a * cx - c * cy).toFixed(3)} ${(-b * cx - d * cy).toFixed(3)})">${shapes}</g>`
+    // Where this floor is, fixed: what the pointer is tested against, so
+    // lifting the floor under it can't move it out from under the pointer.
+    const own = bbox(l.rooms);
+    const hit = [[own.x1, own.y1], [own.x2, own.y1], [own.x2, own.y2], [own.x1, own.y2]].map(([x, y]) => project(x, y)).map(([x, y]) => `${x.toFixed(2)},${(y + dy).toFixed(2)}`).join(' ');
+    const key = l.key || '';
+    return `<g class="lift${hot !== null && hot === key ? ' hot' : ''}" data-level="${esc(key)}" data-hit="${hit}"><g transform="translate(0 ${dy.toFixed(2)}) matrix(${[a, b, c, d].map((v) => v.toFixed(4)).join(' ')} ${(-a * cx - c * cy).toFixed(3)} ${(-b * cx - d * cy).toFixed(3)})">${shapes}</g>`
       + `<text class="floorname" x="${(leftCorner[0] - 0.4).toFixed(2)}" y="${(leftCorner[1] + dy).toFixed(2)}" font-size="${(0.55 * grow).toFixed(2)}">${esc(l.name)}</text>`
       + `${marks.map((m) => { const [px, py] = project(m.x, m.y); return markText(m, px, py + dy, 0.85); }).join('')}</g>`;
   });
-  return `<svg class="plan stacked" viewBox="${vb.map((v) => v.toFixed(2)).join(' ')}" preserveAspectRatio="xMidYMid meet" role="img" aria-label="${esc(title)}">${layers.join('')}</svg>`;
+  return `<svg class="plan stacked${hot !== null && levels.some((l) => (l.key || '') === hot) ? ' hashot' : ''}" viewBox="${vb.map((v) => v.toFixed(2)).join(' ')}" preserveAspectRatio="xMidYMid meet" role="img" aria-label="${esc(title)}">${layers.join('')}</svg>`;
 }
