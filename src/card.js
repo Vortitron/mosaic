@@ -44,7 +44,7 @@ import { artMethods } from './art.js';
 import { planEditMethods } from './plan-edit.js';
 import { locate } from './locator.js';
 
-const VERSION = '0.7.0-beta.10';
+const VERSION = '0.7.0-beta.11';
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
 const reduced = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
 const ON = ['on', 'open', 'opening', 'unlocked', 'playing', 'home', 'heat', 'cool', 'heat_cool', 'auto', 'cleaning'];
@@ -71,6 +71,34 @@ function faceHtml(f) {
     default:
       return '<div class="face"></div>';
   }
+}
+
+// Bring a live list row from oldHtml to newHtml by changing only what changed:
+// attributes in place, and an element swapped only where its own content did.
+// The icon stays the same element (a new one draws blank first, so it
+// flashes). False when the rows aren't alike, to replace the row whole.
+function patchRow(el, oldHtml, newHtml) {
+  const parse = (h) => {
+    const t = document.createElement('div');
+    t.innerHTML = h;
+    return t.firstElementChild;
+  };
+  const morph = (live, was, now) => {
+    if (was.outerHTML === now.outerHTML) return true;
+    if (was.tagName !== now.tagName || live.tagName !== now.tagName) return false;
+    const n = now.children.length;
+    if (was.children.length !== n || live.children.length !== n) return false;
+    if (!n && was.innerHTML !== now.innerHTML) return false;
+    for (const a of [...was.attributes]) if (!now.hasAttribute(a.name)) live.removeAttribute(a.name);
+    for (const a of [...now.attributes]) if (was.getAttribute(a.name) !== a.value) live.setAttribute(a.name, a.value);
+    [...now.children].forEach((child, i) => {
+      if (!morph(live.children[i], was.children[i], child)) live.children[i].replaceWith(child.cloneNode(true));
+    });
+    return true;
+  };
+  const was = parse(oldHtml);
+  const now = parse(newHtml);
+  return !!(was && now && morph(el, was, now));
 }
 
 class MosaicStart extends HTMLElement {
@@ -1344,15 +1372,21 @@ class MosaicStart extends HTMLElement {
       items.forEach((it, i) => {
         it.el = prev[i].el;
         if (!it.el) return; // still being added, a slice at a time
-        if (prev[i].html === it.html) {
-          // Same words, but the icon can change with the state: only near the screen.
-          if (it.id && prev[i].state !== this._hass.states[it.id]) {
-            const ic = it.el.querySelector('ha-state-icon');
-            if (ic && ic.dataset.live) {
-              ic.hass = this._hass;
-              ic.stateObj = this._hass.states[it.id];
-            }
+        // The icon can change with the state: only near the screen.
+        const freshIcon = () => {
+          if (!it.id || prev[i].state === this._hass.states[it.id]) return;
+          const ic = it.el.querySelector('ha-state-icon');
+          if (ic && ic.dataset.live) {
+            ic.hass = this._hass;
+            ic.stateObj = this._hass.states[it.id];
           }
+        };
+        if (prev[i].html === it.html) return freshIcon();
+        // Words changed: swap only the parts that did, so the icon (which
+        // would draw blank and come back) stays put and doesn't flash.
+        if (patchRow(it.el, prev[i].html, it.html)) {
+          freshIcon();
+          this._hydrateLazy(it.el);
           return;
         }
         const tmp = document.createElement('div');
