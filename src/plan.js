@@ -144,7 +144,9 @@ function levelParts(level, hass, entitiesByArea, { highlight = null, labels = tr
     const low = mode === 'people';
     marks.push({ x: Math.min(big[0], big[2]) + w / 2, y: low ? Math.max(big[1], big[3]) - size * 0.9 : Math.min(big[1], big[3]) + h / 2, name, on, size, reading, rsize });
   }
-  if (mode === 'people') for (const w of here) marks.push({ who: true, kind: w.kind, x: w.at[0], y: w.at[1], init: w.init, name: w.name, area: w.areaId, find: w.find });
+  // Markers keep to a size you can see on a big house as well as a small one.
+  const grow = Math.max(1, bbox(level.rooms).w / 11);
+  if (mode === 'people') for (const w of here) marks.push({ who: true, kind: w.kind, x: w.at[0], y: w.at[1], init: w.init, name: w.name, area: w.areaId, find: w.find, grow });
   return { shapes: shapes.join(''), marks };
 }
 
@@ -152,6 +154,7 @@ function levelParts(level, hass, entitiesByArea, { highlight = null, labels = tr
 function markText(m, x, y, scale = 1) {
   if (m.who) {
     // A person: a round marker with initials; a thing: a small diamond. The name under it.
+    scale *= m.grow || 1;
     const r = 0.42 * scale;
     const shape = m.kind === 'person'
       ? `<circle cx="${x.toFixed(2)}" cy="${y.toFixed(2)}" r="${r.toFixed(2)}"/><text class="init" x="${x.toFixed(2)}" y="${y.toFixed(2)}" font-size="${(r * 0.95).toFixed(2)}">${esc(m.init)}</text>`
@@ -194,7 +197,8 @@ export function stackSvg(levels, hass, entitiesByArea, { highlight = null, mode 
   const gap = floorH * STACK.gap;
   const n = levels.length;
   const pad = 0.8;
-  const NAMES = 4.2; // room on the left for the floors' names
+  const grow = Math.max(1, box.w / 11); // a big house: bigger floor names
+  const NAMES = 4.2 * grow; // room on the left for the floors' names
   const vb = [Math.min(...xs) - pad - NAMES, Math.min(...ys) - pad, Math.max(...xs) - Math.min(...xs) + pad * 2 + NAMES, floorH + gap * (n - 1) + pad * 2];
   // Bottom floor first, so each floor up is drawn over the one below it.
   const layers = levels.map((l, i) => ({ l, i })).reverse().map(({ l, i }) => {
@@ -203,7 +207,7 @@ export function stackSvg(levels, hass, entitiesByArea, { highlight = null, mode 
     // The floor's name off its left-hand corner, clear of the floor above.
     const leftCorner = corners.reduce((p, q) => (q[0] < p[0] ? q : p));
     return `<g class="lift"><g transform="translate(0 ${dy.toFixed(2)}) matrix(${[a, b, c, d].map((v) => v.toFixed(4)).join(' ')} ${(-a * cx - c * cy).toFixed(3)} ${(-b * cx - d * cy).toFixed(3)})">${shapes}</g>`
-      + `<text class="floorname" x="${(leftCorner[0] - 0.4).toFixed(2)}" y="${(leftCorner[1] + dy).toFixed(2)}">${esc(l.name)}</text>`
+      + `<text class="floorname" x="${(leftCorner[0] - 0.4).toFixed(2)}" y="${(leftCorner[1] + dy).toFixed(2)}" font-size="${(0.55 * grow).toFixed(2)}">${esc(l.name)}</text>`
       + `${marks.map((m) => { const [px, py] = project(m.x, m.y); return markText(m, px, py + dy, 0.85); }).join('')}</g>`;
   });
   return `<svg class="plan stacked" viewBox="${vb.map((v) => v.toFixed(2)).join(' ')}" preserveAspectRatio="xMidYMid meet" role="img" aria-label="${esc(title)}">${layers.join('')}</svg>`;

@@ -223,7 +223,7 @@ button { font: inherit; color: inherit; background: none; border: 0; padding: 0;
 .plan.stacked .lift { transition: transform 300ms cubic-bezier(.1,.9,.2,1), opacity 300ms; }
 .plan.stacked:hover .lift { opacity: .35; }
 .plan.stacked .lift:hover { opacity: 1; transform: translate(0, -0.5px); }
-.plan .floorname { fill: var(--fg2); font-size: .55px; text-anchor: end; dominant-baseline: central; text-transform: lowercase; }
+.plan .floorname { fill: var(--fg2); text-anchor: end; dominant-baseline: central; text-transform: lowercase; }
 .plan .slab { fill: color-mix(in srgb, var(--fg) 10%, var(--bg)); stroke: var(--fg2); stroke-width: .1; opacity: .9; }
 
 /* --- the people view -------------------------------------------------------- */
