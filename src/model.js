@@ -339,7 +339,8 @@ function entityTile(hass, spec, now) {
     mood = weatherMood(st.state, hass);
   } else if (d === 'person') {
     const pic = pictureOf(st, now);
-    const where = st.state === 'home' ? 'home' : st.state === 'not_home' ? 'away' : st.state;
+    // At home, the room they're in when the locator knows it.
+    const where = st.state === 'home' || spec.room ? (spec.room ? spec.room.toLowerCase() : 'home') : st.state === 'not_home' ? 'away' : st.state;
     // Initials, or the first two letters of a one-word name, so "Sam" and "Sofie" differ.
     const words = label.trim().split(/\s+/);
     const initials = words.length > 1 ? words.map((w) => w[0]).join('').slice(0, 2).toUpperCase() : label.trim().slice(0, 2).replace(/^./, (c) => c.toUpperCase());
@@ -504,7 +505,8 @@ function mediaTile(hass, spec, now) {
   return { ...m, label: spec.name || nameOf(hass, pick), active: hass.states[pick].state === 'playing' };
 }
 
-export function tileModel(hass, spec, now = Date.now(), assistant = null, settings = null) {
+export function tileModel(hass, spec, now = Date.now(), assistant = null, settings = null, rooms = null) {
+  if (spec.entity && rooms && rooms.has(spec.entity)) spec = { ...spec, room: rooms.get(spec.entity) };
   const size = SIZES[spec.size] ? spec.size : 'medium';
   let m;
   if (spec.type === 'clock') m = clockTile(hass, spec, now);

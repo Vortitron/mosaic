@@ -42,8 +42,9 @@ import { settingsMethods } from './settings.js';
 import { backOf } from './backs.js';
 import { artMethods } from './art.js';
 import { planEditMethods } from './plan-edit.js';
+import { locate } from './locator.js';
 
-const VERSION = '0.7.0-beta.9';
+const VERSION = '0.7.0-beta.10';
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
 const reduced = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
 const ON = ['on', 'open', 'opening', 'unlocked', 'playing', 'home', 'heat', 'cool', 'heat_cool', 'auto', 'cleaning'];
@@ -418,14 +419,32 @@ class MosaicStart extends HTMLElement {
     return this._settingsInfo;
   }
 
+  // Which room each person is in, from the locator (phones Bermuda follows),
+  // for their tiles; worked out once per state update, plan or no plan.
+  _personRooms() {
+    if (this._roomsAt === this._hass.states) return this._roomsMap;
+    const hasPeople = [...this._tiles.values()].some((t) => t.spec.entity && t.spec.entity.startsWith('person.'));
+    const map = new Map();
+    if (hasPeople) {
+      this._tileMem = this._tileMem || new Map();
+      for (const w of locate(this._hass, this._plan || null, this._tileMem)) {
+        if (w.person && w.areaId && this._hass.areas[w.areaId]) map.set(w.person, this._hass.areas[w.areaId].name);
+      }
+    }
+    this._roomsAt = this._hass.states;
+    this._roomsMap = map;
+    return map;
+  }
+
   _refreshTiles() {
     const now = Date.now();
+    const rooms = this._personRooms();
     const settings = this._settingsSummary();
     // Until Assist answers which agent it is, a configured agent is named straight away.
     const conf = this._config.assistant;
     const assistant = this._agent ? { name: this._agent.name, last: this._conv.last } : conf && conf.agent_id ? { name: conf.name || agentName(this._hass, conf.agent_id, null), last: null } : null;
     for (const t of this._tiles.values()) {
-      const m = tileModel(this._hass, t.spec, now, assistant, settings);
+      const m = tileModel(this._hass, t.spec, now, assistant, settings, rooms);
       const sig = JSON.stringify(m);
       t.model = m;
       if (sig === t.sig) continue;

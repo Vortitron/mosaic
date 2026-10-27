@@ -156,10 +156,10 @@ function markText(m, x, y, scale = 1) {
     // A person: a round marker with initials; a thing: a small diamond. The name under it.
     scale *= m.grow || 1;
     const r = 0.42 * scale;
-    const shape = m.kind === 'person'
-      ? `<circle cx="${x.toFixed(2)}" cy="${y.toFixed(2)}" r="${r.toFixed(2)}"/><text class="init" x="${x.toFixed(2)}" y="${y.toFixed(2)}" font-size="${(r * 0.95).toFixed(2)}">${esc(m.init)}</text>`
+    const shape = m.kind === 'person' || m.kind === 'someone'
+      ? `<circle cx="${x.toFixed(2)}" cy="${y.toFixed(2)}" r="${r.toFixed(2)}"/><text class="init" x="${x.toFixed(2)}" y="${y.toFixed(2)}" font-size="${(r * 0.95).toFixed(2)}">${esc(m.kind === 'someone' ? '?' : m.init)}</text>`
       : `<rect x="${(x - r * 0.6).toFixed(2)}" y="${(y - r * 0.6).toFixed(2)}" width="${(r * 1.2).toFixed(2)}" height="${(r * 1.2).toFixed(2)}" transform="rotate(45 ${x.toFixed(2)} ${y.toFixed(2)})"/>`;
-    return `<g class="who ${m.kind}${m.find ? ' found' : ''}" data-area="${esc(m.area)}">${shape}<text class="whoname" x="${x.toFixed(2)}" y="${(y + r + 0.32 * scale).toFixed(2)}" font-size="${(0.34 * scale).toFixed(2)}">${esc(m.name)}</text></g>`;
+    return `<g class="who ${m.kind}${m.find ? ' found' : ''}"${m.area ? ` data-area="${esc(m.area)}"` : ''}>${shape}${m.kind === 'someone' ? '' : `<text class="whoname" x="${x.toFixed(2)}" y="${(y + r + 0.32 * scale).toFixed(2)}" font-size="${(0.34 * scale).toFixed(2)}">${esc(m.name)}</text>`}</g>`;
   }
   const size = m.size * scale;
   if (m.reading) {

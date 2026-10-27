@@ -229,6 +229,8 @@ button { font: inherit; color: inherit; background: none; border: 0; padding: 0;
 /* --- the people view -------------------------------------------------------- */
 .plan .room.occupied rect { fill: color-mix(in srgb, var(--accent) 55%, var(--bg)); }
 .plan .who circle { fill: #fff; stroke: var(--accent); stroke-width: .1; }
+.plan .who.someone circle { fill: transparent; stroke: #fff; stroke-dasharray: .12 .08; }
+.plan .who.someone text.init { fill: #fff; }
 .plan .who.thing rect { fill: var(--accent2); stroke: #fff; stroke-width: .06; }
 .plan .who text.init { fill: var(--accent); font-weight: 600; text-anchor: middle; dominant-baseline: central; stroke: none; }
 .plan .who text.whoname { fill: #fff; text-anchor: middle; dominant-baseline: hanging; paint-order: stroke; stroke: rgba(0,0,0,.6); stroke-width: .06; }

@@ -53,3 +53,33 @@ test('a phone that blinks to unknown keeps its room for a while; one that leaves
   assert.equal(locate(hass, FAKE_PLAN, memory).find((w) => w.kind === 'person'), undefined);
   assert.equal(initials('Superduper'), 'Su');
 });
+
+import { radarPoint } from '../src/locator.js';
+
+test("a radar's reading on the plan: straight ahead, or across and ahead", () => {
+  const p = radarPoint([0, 0], 0, { distance: 2 });
+  assert.ok(Math.abs(p[0] - 2) < 1e-9 && Math.abs(p[1]) < 1e-9);
+  const q = radarPoint([1, 1], 90, { x: 0.5, y: 2 }); // looking along +y; x is to its right (-x on the plan)
+  assert.ok(Math.abs(q[0] - 0.5) < 1e-9 && Math.abs(q[1] - 3) < 1e-9, `${q}`);
+});
+
+test('a radar that sees someone where no phone is: someone, in the right room', () => {
+  const hass = freshen(makeFakeHass());
+  const who = locate(hass, FAKE_PLAN, new Map());
+  const someone = who.find((w) => w.kind === 'someone');
+  assert.equal(someone.areaId, 'office');
+  const office = FAKE_PLAN.rooms.find((r) => r.area === 'office').rects;
+  assert.deepEqual(inside(someone.at, office), someone.at);
+  hass.states['binary_sensor.office_radar_occupancy'] = { ...hass.states['binary_sensor.office_radar_occupancy'], state: 'off' };
+  assert.equal(locate(hass, FAKE_PLAN, new Map()).find((w) => w.kind === 'someone'), undefined, 'nobody there: nothing');
+});
+
+import { tileModel } from '../src/model.js';
+
+test("a person's tile says which room they're in", () => {
+  const hass = makeFakeHass();
+  const rooms = new Map([['person.andy', 'Living Room']]);
+  assert.equal(tileModel(hass, { entity: 'person.andy' }, Date.now(), null, null, rooms).faces[0].sub, 'living room');
+  assert.equal(tileModel(hass, { entity: 'person.andy' }).faces[0].sub, 'home');
+  assert.equal(tileModel(hass, { entity: 'person.sam' }).faces[0].sub, 'away');
+});

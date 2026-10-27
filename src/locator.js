@@ -119,6 +119,44 @@ export function inside(p, rects, margin = 0.3) {
   return best ? best.q : p;
 }
 
+// A radar's reading as a point on the plan. An LD2410 knows only how far
+// away someone is, straight ahead of it; an LD2450 gives each target's x
+// (across) and y (ahead). at: where the radar is; facing: degrees, plan
+// angle (0 = +x, 90 = +y, y downwards); metres throughout.
+export function radarPoint(at, facing, target) {
+  const a = (facing * Math.PI) / 180;
+  const ahead = [Math.cos(a), Math.sin(a)];
+  if (target.x === undefined) return [at[0] + ahead[0] * target.distance, at[1] + ahead[1] * target.distance];
+  const right = [Math.cos(a + Math.PI / 2), Math.sin(a + Math.PI / 2)];
+  return [at[0] + ahead[0] * target.y + right[0] * target.x, at[1] + ahead[1] * target.y + right[1] * target.x];
+}
+
+const metres = (st) => {
+  const v = st ? parseFloat(st.state) : NaN;
+  if (!Number.isFinite(v)) return null;
+  return v / ({ mm: 1000, cm: 100, m: 1 }[st.attributes.unit_of_measurement] || 100);
+};
+
+// What each radar on the plan sees: the points of the people in front of it,
+// when its presence says someone is there.
+export function radarSightings(hass, plan) {
+  const out = [];
+  for (const r of (plan && plan.radars) || []) {
+    const p = r.radar;
+    const presence = ['occupancy', 'presence', 'motion', 'static', 'moving', 'still'].map((k) => hass.states[`binary_sensor.${p}_${k}`]).filter(Boolean);
+    if (presence.length && !presence.some((st) => st.state === 'on')) continue;
+    const at = r.at || [r.x, r.y];
+    const targets = [1, 2, 3]
+      .map((n) => ({ x: metres(hass.states[`sensor.${p}_target_${n}_x`]), y: metres(hass.states[`sensor.${p}_target_${n}_y`]) }))
+      .filter((t) => t.x !== null && t.y !== null && (t.x !== 0 || t.y !== 0));
+    const points = targets.length
+      ? targets.map((t) => radarPoint(at, r.facing || 0, t))
+      : ['moving_distance', 'still_distance', 'detect_distance', 'detection_distance'].map((k) => metres(hass.states[`sensor.${p}_${k}`])).filter((d) => d > 0).slice(0, 1).map((d) => radarPoint(at, r.facing || 0, { distance: d }));
+    for (const pt of points) out.push({ radar: p, level: r.level || '', at: pt });
+  }
+  return out;
+}
+
 const centreOf = (rects) => {
   const big = [...rects].sort((p, q) => Math.abs((q[2] - q[0]) * (q[3] - q[1])) - Math.abs((p[2] - p[0]) * (p[3] - p[1])))[0];
   return [(big[0] + big[2]) / 2, (big[1] + big[3]) / 2];
@@ -170,6 +208,24 @@ export function locate(hass, plan, memory = new Map(), { holdMs = 90000 } = {}) 
     }
     out.push({ ...it, areaId: area.area_id, room: room ? room.id : null, level: room ? room.level || '' : null, at, fitted: !!(room && memory.get(it.key).fitted) });
   }
+  // What the radars see. Someone the radar sees in a room where a phone is:
+  // that's them, at the radar's (much better) point. Nobody's phone there:
+  // someone, all the same.
+  const roomAt = (pt, level) => rooms.find((r) => (r.level || '') === (level || '') && r.rects.some(([x1, y1, x2, y2]) => pt[0] >= Math.min(x1, x2) && pt[0] <= Math.max(x1, x2) && pt[1] >= Math.min(y1, y2) && pt[1] <= Math.max(y1, y2)));
+  radarSightings(hass, plan).forEach((s, n) => {
+    const room = roomAt(s.at, s.level);
+    if (!room) return;
+    const phone = out.filter((w) => w.room === room.id && w.kind === 'person').sort((p, q) => Math.hypot(p.at[0] - s.at[0], p.at[1] - s.at[1]) - Math.hypot(q.at[0] - s.at[0], q.at[1] - s.at[1]))[0];
+    const at = inside(s.at, room.rects);
+    if (phone && !phone.radar) {
+      phone.at = at;
+      phone.fitted = true;
+      phone.radar = true;
+      return;
+    }
+    const area = room.area || null;
+    out.push({ key: `r:${s.radar}:${n}`, kind: 'someone', name: 'someone', label: 'someone', areaId: area, room: room.id, level: room.level || '', at, fitted: true, radar: true });
+  });
   // People with no fitted point share their room's middle: side by side, not on top of each other.
   const byRoom = new Map();
   for (const w of out) if (w.at && !w.fitted) (byRoom.get(w.room) || byRoom.set(w.room, []).get(w.room)).push(w);

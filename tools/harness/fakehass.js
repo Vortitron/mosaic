@@ -63,6 +63,9 @@ export function makeFakeHass(onUpdate, { agent = 'anthropic' } = {}) {
   add('sensor.bermuda_0a1b8d57aaaabbbbcccc0123456789ab_100_40004_area', 'Living Room', { friendly_name: 'Pixel 8 Area' }, null, { platform: 'bermuda' });
   add('sensor.bermuda_0a1b8d57aaaabbbbcccc0123456789ab_100_40004_distance_to_kitchen_proxy', '2.5', { friendly_name: 'Pixel 8 Distance to Kitchen Proxy', unit_of_measurement: 'm' }, null, { platform: 'bermuda' });
   add('sensor.bermuda_0a1b8d57aaaabbbbcccc0123456789ab_100_40004_distance_to_hall_proxy', '4', { friendly_name: 'Pixel 8 Distance to Hall Proxy', unit_of_measurement: 'm' }, null, { platform: 'bermuda' });
+  // The office's presence radar sees someone 1.5 m in front of it.
+  add('binary_sensor.office_radar_occupancy', 'on', { friendly_name: 'Office Radar Occupancy', device_class: 'occupancy' }, 'office');
+  add('sensor.office_radar_moving_distance', '150', { friendly_name: 'Office Radar Moving distance', unit_of_measurement: 'cm', device_class: 'distance' }, 'office');
   // A tag on the car keys.
   add('sensor.car_keys_area', 'Kitchen', { friendly_name: 'Car Keys Area' }, null, { platform: 'bermuda' });
   add('person.sam', 'not_home', { friendly_name: 'Sam' }, null);
@@ -144,4 +147,6 @@ export const FAKE_PLAN = {
   levels: { up: { floor: 2.7 } },
   // Where the Bluetooth listeners are, for placing people within a room.
   scanners: { 'Kitchen Proxy': [6, 1], 'Hall Proxy': [1, 6] },
+  // A presence radar in the office, in the corner, looking into the room.
+  radars: [{ radar: 'office_radar', at: [5.2, 0.2], facing: 45, level: 'up' }],
 };
