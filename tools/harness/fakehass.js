@@ -108,7 +108,11 @@ export function makeFakeHass(onUpdate, { agent = 'anthropic' } = {}) {
       }
       if (msg.type === 'conversation/process') {
         await new Promise((r) => setTimeout(r, 600));
-        return { conversation_id: 'c1', response: { response_type: 'action_done', speech: { plain: { speech: `I turned on the kitchen island light. (You said: ${msg.text})` } } } };
+        // A believable answer for the README's screenshot; anything else gets the stock one.
+        const speech = /left on/i.test(msg.text)
+          ? 'Two things: the kitchen ceiling light, and the TV plug, which is drawing 4 W on standby. Shall I turn them off?'
+          : `I turned on the kitchen island light. (You said: ${msg.text})`;
+        return { conversation_id: 'c1', response: { response_type: 'action_done', speech: { plain: { speech } } } };
       }
       throw new Error('unknown ' + msg.type);
     },

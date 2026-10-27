@@ -4,6 +4,14 @@ A live-tile Start screen for Home Assistant, after Windows Phone 10.
 
 **[Try it on a demo home →](https://housefly.vome.io/mosaic)** No account needed: the link signs you in as a guest on a simulated house hosted by [Vome](https://vome.io), so tap away. It works best on a phone.
 
+<p>
+<img src="docs/start.jpg" width="190" alt="Start: live tiles for the date, the assistant, the weather, people, what's playing and each room">
+<img src="docs/room.jpg" width="190" alt="A room opened like an app: lights, power and climate as pivots, with toggles">
+<img src="docs/claude.jpg" width="190" alt="Asking Claude what is left on downstairs">
+<img src="docs/customise.jpg" width="190" alt="Customising Start: a tile resized, with its unpin and resize handles">
+</p>
+<img src="docs/desktop.jpg" width="780" alt="On a desktop: the device list beside the tiles, in the light theme with a magenta accent">
+
 - **Live tiles:** small, medium, wide and large tiles in one accent colour. They flip or peek between faces: a room turns over to its temperature or what's playing, the date to your next event, a camera tile shows its picture.
 - **Rooms are apps:** tap a room tile for a full-screen room with pivots (lights, power, climate, media, security...) that you swipe between. Tapping a name opens Home Assistant's own dialog.
 - **The A–Z list:** swipe left (on a desktop it sits beside the tiles) for everything in the house, with search and a letter jump list. It lists **devices** (a smart plug is one row, not five sensors; tap it to open it like a room) or every **entity**: switch at the top, and each viewer's choice is remembered.
@@ -85,4 +93,4 @@ npm test             # the model, in node
 python3 -m http.server 18766   # then open /tools/harness/ (fake home; ?theme=light&accent=lime&cols=8)
 ```
 
-`tools/hatest.cjs`, `tools/listtest.cjs` and `tools/haedittest.cjs` drive a real Home Assistant with Playwright (login, room toggle, Assist, the device list, saving a customised Start). `tools/edittest.cjs` runs the customising against the harness, and `tools/editortest.cjs` opens the settings in a real Home Assistant.
+`tools/hatest.cjs`, `tools/listtest.cjs` and `tools/haedittest.cjs` drive a real Home Assistant with Playwright (login, room toggle, Assist, the device list, saving a customised Start). `tools/edittest.cjs` runs the customising against the harness, and `tools/editortest.cjs` opens the settings in a real Home Assistant. `tools/readme-shots.cjs` remakes these screenshots from the harness.

@@ -10,6 +10,7 @@
     "test": "node --test test/*.test.js"
   },
   "devDependencies": {
+    "@mdi/js": "^7.4.47",
     "esbuild": "^0.25.0"
   }
 }

@@ -6,21 +6,40 @@
 <div class="hdr"></div>
 <mosaic-start></mosaic-start>
 <script type="module">
-// Stand-ins for Home Assistant's icon elements: a letter in a circle is enough to see layout.
+// Stand-ins for Home Assistant's icon elements, drawing the same Material
+// Design icons Home Assistant uses (picked by domain, state and class).
+import * as mdi from '../../node_modules/@mdi/js/mdi.js';
+const camel = (name) => 'mdi' + name.replace(/^mdi:/, '').split('-').map((w) => w[0].toUpperCase() + w.slice(1)).join('');
+function iconFor(st) {
+  if (!st) return 'mdiHelpCircleOutline';
+  const [d] = st.entity_id.split('.');
+  const on = ['on', 'open', 'playing', 'home', 'heat', 'unlocked'].includes(st.state);
+  const dc = st.attributes.device_class;
+  const byClass = { temperature: 'mdiThermometer', humidity: 'mdiWaterPercent', power: 'mdiFlash', energy: 'mdiLightningBolt', carbon_dioxide: 'mdiMoleculeCo2', motion: on ? 'mdiMotionSensor' : 'mdiMotionSensorOff', window: on ? 'mdiWindowOpenVariant' : 'mdiWindowClosedVariant', door: on ? 'mdiDoorOpen' : 'mdiDoorClosed' };
+  if (byClass[dc]) return byClass[dc];
+  const byDomain = {
+    light: on ? 'mdiLightbulb' : 'mdiLightbulbOutline', switch: on ? 'mdiToggleSwitch' : 'mdiToggleSwitchOffOutline', media_player: on ? 'mdiSpeakerPlay' : 'mdiSpeaker',
+    camera: 'mdiCctv', lock: on ? 'mdiLockOpenVariant' : 'mdiLock', climate: 'mdiThermostat', person: on ? 'mdiAccount' : 'mdiAccountArrowRight', cover: 'mdiBlindsHorizontal',
+    scene: 'mdiPalette', vacuum: 'mdiRobotVacuum', weather: 'mdiWeatherPartlyCloudy', sensor: 'mdiEye', binary_sensor: 'mdiCheckboxMarkedCircleOutline', calendar: 'mdiCalendar',
+  };
+  return byDomain[d] || 'mdiCircleOutline';
+}
 for (const tag of ['ha-icon', 'ha-state-icon']) customElements.define(tag, class extends HTMLElement {
   connectedCallback() { this.paint(); }
   set stateObj(s) { this._s = s; this.paint(); }
   set hass(h) {}
   paint() {
-    const label = (this.getAttribute('icon') || (this._s && this._s.entity_id) || '?').split(/[.:]/)[1] || '?';
-    const size = 'var(--mdc-icon-size, 24px)';
-    this.style.cssText = `display:inline-flex;align-items:center;justify-content:center;width:${size};height:${size};border:2px solid currentColor;border-radius:50%;font:600 calc(${size} * .4)/1 sans-serif;text-transform:uppercase;box-sizing:border-box`;
-    this.textContent = label[0];
+    const name = this.getAttribute('icon') ? camel(this.getAttribute('icon')) : iconFor(this._s);
+    const path = mdi[name] || mdi.mdiCircleOutline;
+    this.style.cssText = 'display:inline-flex;width:var(--mdc-icon-size,24px);height:var(--mdc-icon-size,24px)';
+    this.innerHTML = `<svg viewBox="0 0 24 24" width="100%" height="100%" fill="currentColor"><path d="${path}"/></svg>`;
   }
 });
 import { makeFakeHass } from './fakehass.js';
 await import('../../dist/mosaic.js');
 const p = new URLSearchParams(location.search);
+// ?bare: no stand-in Home Assistant header (README screenshots).
+if (p.has('bare')) document.querySelector('.hdr').remove();
 const card = document.querySelector('mosaic-start');
 const conf = { accent: p.get('accent') || 'cobalt', theme: p.get('theme') || 'auto' };
 if (p.has('cols')) conf.columns = Number(p.get('cols'));
