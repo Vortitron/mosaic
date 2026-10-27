@@ -33,7 +33,7 @@ import {
   ACCENTS, accentColour, allList, alphabet, langOf, autoGroups, canToggle, deviceList, deviceName, domainOf, entitiesByArea,
   nameOf, pivotsFor, serviceFor, shortName, spanOf, stateText, tapAction, tileModel,
 } from './model.js';
-import { Conversation, resolveAgent } from './assistant.js';
+import { Conversation, agentName, resolveAgent } from './assistant.js';
 import { MosaicStartEditor } from './editor.js';
 import { VoiceRun, canListen } from './voice.js';
 import { ManageStore } from './manage-store.js';
@@ -43,7 +43,7 @@ import { backOf } from './backs.js';
 import { artMethods } from './art.js';
 import { planEditMethods } from './plan-edit.js';
 
-const VERSION = '0.7.0-beta.8';
+const VERSION = '0.7.0-beta.9';
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
 const reduced = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
 const ON = ['on', 'open', 'opening', 'unlocked', 'playing', 'home', 'heat', 'cool', 'heat_cool', 'auto', 'cleaning'];
@@ -421,7 +421,9 @@ class MosaicStart extends HTMLElement {
   _refreshTiles() {
     const now = Date.now();
     const settings = this._settingsSummary();
-    const assistant = this._agent ? { name: this._agent.name, last: this._conv.last } : null;
+    // Until Assist answers which agent it is, a configured agent is named straight away.
+    const conf = this._config.assistant;
+    const assistant = this._agent ? { name: this._agent.name, last: this._conv.last } : conf && conf.agent_id ? { name: conf.name || agentName(this._hass, conf.agent_id, null), last: null } : null;
     for (const t of this._tiles.values()) {
       const m = tileModel(this._hass, t.spec, now, assistant, settings);
       const sig = JSON.stringify(m);

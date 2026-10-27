@@ -194,7 +194,7 @@ button { font: inherit; color: inherit; background: none; border: 0; padding: 0;
 .art .liveplan .storey { max-width: none; flex: 1 1 0; min-height: 0; display: flex; flex-direction: column; }
 .art .liveplan svg { flex: 1 1 auto; min-height: 0; height: 100%; }
 .plan { width: 100%; height: auto; display: block; overflow: visible; }
-.planart { width: auto !important; flex: 1 1 340px; max-width: 620px; }
+.planart { width: auto !important; flex: 1 1 340px; max-width: 960px; }
 .plan .wall { fill: none; stroke: var(--fg2); stroke-width: .14; opacity: .55; }
 .plan .wall.out { stroke-dasharray: .35 .25; opacity: .35; }
 .plan .room rect { fill: color-mix(in srgb, var(--fg) 5%, transparent); transition: fill 300ms; }
