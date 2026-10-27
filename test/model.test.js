@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { makeFakeHass } from '../tools/harness/fakehass.js';
-import { alphabet, letterOf, allList, autoGroups, deviceList, primaryEntity, pivotsFor, looksImportant, nextEvent, roomPivots, serviceFor, shortName, tapAction, tileModel, accentColour } from '../src/model.js';
+import { guessAreaIcon, alphabet, letterOf, allList, autoGroups, deviceList, primaryEntity, pivotsFor, looksImportant, nextEvent, roomPivots, serviceFor, shortName, tapAction, tileModel, accentColour } from '../src/model.js';
 import { agentName, Conversation } from '../src/assistant.js';
 import { toForm, fromForm } from '../src/config.js';
 
@@ -185,4 +185,21 @@ test('the date tile can be told which calendars count', () => {
   assert.equal(nextEvent(h, Date.now(), ['calendar.family']).title, 'Dentist');
   assert.equal(tileModel(h, { type: 'clock', calendars: ['calendar.family'] }).faces[1].t2, 'Dentist');
   void later;
+});
+
+test('room icons from English and Swedish names, offices before cinemas', () => {
+  assert.equal(guessAreaIcon('Bio Office'), 'mdi:desk');
+  assert.equal(guessAreaIcon('bio'), 'mdi:theater');
+  assert.equal(guessAreaIcon('Allrum'), 'mdi:sofa');
+  assert.equal(guessAreaIcon('Källare'), 'mdi:stairs-down');
+  assert.equal(guessAreaIcon('Comms Room'), 'mdi:server-network');
+  assert.equal(guessAreaIcon('Upper Rear Vestibule'), 'mdi:door');
+  assert.equal(guessAreaIcon('Biology lab'), 'mdi:theater'); // a word start is enough: good enough for a guess
+  assert.equal(guessAreaIcon('Residence'), 'mdi:home-outline');
+});
+
+test('people without a picture: initials, or two letters of a one-word name', () => {
+  const h = { ...hass, states: { ...hass.states, 'person.superduper': { entity_id: 'person.superduper', state: 'home', attributes: { friendly_name: 'Superduper' } }, 'person.ann_lee': { entity_id: 'person.ann_lee', state: 'home', attributes: { friendly_name: 'Ann Lee' } } } };
+  assert.equal(tileModel(h, { entity: 'person.superduper', size: 'small' }).faces[0].big, 'Su');
+  assert.equal(tileModel(h, { entity: 'person.ann_lee' }).faces[0].big, 'AL');
 });

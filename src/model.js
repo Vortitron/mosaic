@@ -338,7 +338,10 @@ function entityTile(hass, spec, now) {
   } else if (d === 'person') {
     const pic = pictureOf(st, now);
     const where = st.state === 'home' ? 'home' : st.state === 'not_home' ? 'away' : st.state;
-    faces.push(pic ? { kind: 'image', url: pic, cap: where } : { kind: 'big', big: label.split(/\s+/).map((w) => w[0]).join('').slice(0, 2).toUpperCase(), sub: where });
+    // Initials, or the first two letters of a one-word name, so "Sam" and "Sofie" differ.
+    const words = label.trim().split(/\s+/);
+    const initials = words.length > 1 ? words.map((w) => w[0]).join('').slice(0, 2).toUpperCase() : label.trim().slice(0, 2).replace(/^./, (c) => c.toUpperCase());
+    faces.push(pic ? { kind: 'image', url: pic, cap: where } : { kind: 'big', big: initials, sub: where });
     active = st.state === 'home';
   } else if (d === 'camera') {
     const pic = pictureOf(st, now);
@@ -403,17 +406,36 @@ function areaTile(hass, spec, now) {
   };
 }
 
-function guessAreaIcon(name) {
-  const n = name.toLowerCase();
-  const map = [
-    ['kitchen', 'mdi:silverware-fork-knife'], ['living', 'mdi:sofa'], ['lounge', 'mdi:sofa'], ['bed', 'mdi:bed'],
-    ['bath', 'mdi:shower'], ['shower', 'mdi:shower'], ['toilet', 'mdi:toilet'], ['wc', 'mdi:toilet'], ['office', 'mdi:desk'],
-    ['study', 'mdi:desk'], ['garage', 'mdi:garage'], ['garden', 'mdi:flower'], ['yard', 'mdi:flower'], ['hall', 'mdi:door'],
-    ['entrance', 'mdi:door'], ['dining', 'mdi:table-chair'], ['laundry', 'mdi:washing-machine'], ['utility', 'mdi:washing-machine'],
-    ['loft', 'mdi:home-roof'], ['attic', 'mdi:home-roof'], ['cinema', 'mdi:theater'], ['kid', 'mdi:teddy-bear'], ['nursery', 'mdi:teddy-bear'],
-  ];
-  const hit = map.find(([k]) => n.includes(k));
-  return hit ? hit[1] : 'mdi:home-outline';
+// A room's icon from its name, in English or Swedish, when it has none of its
+// own. Order matters: "Bio Office" is an office before it is a cinema.
+const AREA_ICONS = [
+  [['office', 'study', 'kontor', 'arbetsrum'], 'mdi:desk'],
+  [['kitchen', 'kök', 'kok'], 'mdi:silverware-fork-knife'],
+  [['living', 'lounge', 'vardagsrum', 'allrum', 'family', 'sitting'], 'mdi:sofa'],
+  [['bed', 'sovrum', 'quiet', 'guest'], 'mdi:bed'],
+  [['bath', 'shower', 'badrum', 'dusch'], 'mdi:shower'],
+  [['toilet', 'wc', 'toalett', 'loo'], 'mdi:toilet'],
+  [['garage', 'carport'], 'mdi:garage'],
+  [['garden', 'yard', 'trädgård', 'lawn', 'tomt'], 'mdi:flower'],
+  [['walkway', 'path', 'drive', 'uppfart'], 'mdi:walk'],
+  [['porch', 'vestibule', 'farstu', 'entré', 'entrance', 'hall'], 'mdi:door'],
+  [['dining', 'matsal'], 'mdi:table-chair'],
+  [['laundry', 'utility', 'tvätt', 'tvatt'], 'mdi:washing-machine'],
+  [['loft', 'attic', 'vind'], 'mdi:home-roof'],
+  [['cinema', 'theatre', 'theater', 'bio', 'media'], 'mdi:theater'],
+  [['kid', 'nursery', 'barn', 'play'], 'mdi:teddy-bear'],
+  [['comms', 'server', 'rack', 'network', 'datarum'], 'mdi:server-network'],
+  [['cellar', 'basement', 'källare', 'kallare'], 'mdi:stairs-down'],
+  [['wardrobe', 'closet', 'garderob', 'dressing'], 'mdi:hanger'],
+  [['window', 'sill', 'fönster'], 'mdi:window-closed-variant'],
+  [['balcony', 'terrace', 'patio', 'altan', 'veranda'], 'mdi:balcony'],
+  [['gym', 'workout'], 'mdi:dumbbell'],
+  [['workshop', 'verkstad', 'shed', 'förråd'], 'mdi:hammer-wrench'],
+];
+export function guessAreaIcon(name) {
+  const n = ` ${String(name).toLowerCase()}`;
+  for (const [words, icon] of AREA_ICONS) if (words.some((w) => new RegExp(`[^a-zåäö]${w}`).test(n))) return icon;
+  return 'mdi:home-outline';
 }
 
 function clockTile(hass, spec, now) {

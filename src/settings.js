@@ -89,16 +89,20 @@ export const settingsMethods = {
     const hass = this._hass;
     // Needs you.
     const items = attention(store, hass);
-    const count = items.length;
+    const offline = items.filter((i) => i.kind === 'offline');
+    const count = items.length - offline.length;
     const head = app.querySelector('.pivots [data-p="attention"]');
     head.textContent = count ? `needs you (${count})` : 'all good';
-    put('attention', count
-      ? ATTENTION_SECTIONS.map(([kind, title]) => {
-        const these = items.filter((i) => i.kind === kind);
-        if (!these.length) return '';
-        return `<h4 class="ghead">${esc(title)}</h4>${these.map((i) => this._attentionRow(i)).join('')}`;
-      }).join('')
-      : '<div class="calm"><div class="big">all good</div><div>Nothing is failing, nothing new was found, and there are no repairs or updates waiting.</div></div>');
+    const sections = ATTENTION_SECTIONS.map(([kind, title]) => {
+      const these = items.filter((i) => i.kind === kind);
+      if (!these.length) return '';
+      // Devices not answering: folded away, there can be dozens.
+      if (kind === 'offline' && !this._offlineOpen) {
+        return `<h4 class="ghead">${esc(title)}</h4><div class="row" data-act="showoffline">${icon('mdi:lan-disconnect', 'off')}<span class="rname"><span>${these.length} device${these.length === 1 ? " isn't" : "s aren't"} responding</span><small>show them</small></span></div>`;
+      }
+      return `<h4 class="ghead">${esc(title)}</h4>${these.map((i) => this._attentionRow(i)).join('')}`;
+    }).join('');
+    put('attention', (count ? '' : '<div class="calm"><div class="big">all good</div><div>Nothing is failing, nothing new was found, and there are no repairs or updates waiting.</div></div>') + sections);
     // Devices.
     const df = app.querySelector('.sdev').value;
     const groups = deviceRows(store, hass, df);
@@ -133,6 +137,10 @@ export const settingsMethods = {
     const row = e.target.closest('.row');
     const neu = e.target.closest('[data-new]');
     if (neu) return neu.dataset.new === 'helper' ? this._newHelper() : this._addIntegration();
+    if (btn && btn.dataset.act === 'showoffline') {
+      this._offlineOpen = true;
+      return this._renderSettings();
+    }
     if (btn) {
       e.stopPropagation();
       if (btn.dataset.act === 'reload') return this._reloadEntry(btn.dataset.entry);
