@@ -306,6 +306,7 @@ button { font: inherit; color: inherit; background: none; border: 0; padding: 0;
 .editing .grid.empty::after { content: 'drag tiles here'; grid-column: 1 / -1; align-self: center; color: var(--fg2); font-size: 14px; padding-left: 8px; }
 .addgroup { display: block; margin: 8px 0 0; border: 2px dashed var(--line); color: var(--fg2); padding: 10px 16px; font-size: 15px; }
 .toast { position: absolute; bottom: 0; left: 0; right: 0; z-index: 9; background: var(--accent); color: #fff; padding: 12px var(--pad) calc(12px + env(safe-area-inset-bottom)); font-size: 15px; transform: translateY(110%); transition: transform 250ms cubic-bezier(.1,.9,.2,1); pointer-events: none; }
+.toast:not(.on) { visibility: hidden; transition: transform 250ms cubic-bezier(.1,.9,.2,1), visibility 0s 250ms; }
 .toast.on { transform: none; }
 .msg .menu h3 { margin-bottom: 12px; }
 .msg .menu button { display: block; width: 100%; text-align: left; font-size: 20px; font-weight: 350; padding: 10px 0; }

@@ -10,7 +10,7 @@ import {
   ATTENTION_SECTIONS, NEW_HELPERS, attention, deviceLabel, deviceRows, entitiesOfDevice, helperCreateMessage,
   integrationName, integrationRows, roomsByFloor,
 } from './manage-model.js';
-import { letterOf, langOf } from './model.js';
+import { guessAreaIcon, letterOf, langOf } from './model.js';
 
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
 const icon = (mdi, cls = '') => `<span class="ricon ${cls}"><ha-icon icon="${esc(mdi)}"></ha-icon></span>`;
@@ -635,7 +635,7 @@ export const settingsMethods = {
       // This floor's storey of the plan, when there is one.
       const lv = this._plan ? this._levels().find((l) => (l.floorId || '') === (f.floor || '')) : null;
       const plan = lv ? `<div class="liveplan" data-plan="${esc(lv.key) || 'main'}" data-highlight="${esc(focusArea || '')}">${this._planHtml({ level: lv.key, highlight: focusArea || null })}</div>` : '';
-      const html = `${plan}${f.rooms.map((r) => `<div class="row" data-area="${esc(r.area)}"><span class="ricon"><ha-icon icon="${esc(r.icon || 'mdi:door')}"></ha-icon></span><span class="rname"><span>${esc(r.name)}</span><small>${r.devices} device${r.devices === 1 ? '' : 's'}</small></span></div>`).join('')}
+      const html = `${plan}${f.rooms.map((r) => `<div class="row" data-area="${esc(r.area)}"><span class="ricon"><ha-icon icon="${esc(r.icon || guessAreaIcon(r.name))}"></ha-icon></span><span class="rname"><span>${esc(r.name)}</span><small>${r.devices} device${r.devices === 1 ? '' : 's'}</small></span></div>`).join('')}
         <div class="links"><button class="link" data-newroom="${esc(f.floor || '')}">+ room${f.floor ? ` on ${esc(f.name.toLowerCase())}` : ''}</button></div>`;
       if (page.dataset.html === html) continue;
       page.dataset.html = html;
