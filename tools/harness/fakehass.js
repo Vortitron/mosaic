@@ -55,7 +55,16 @@ export function makeFakeHass(onUpdate, { agent = 'anthropic' } = {}) {
   add('scene.movie', 'scening', { friendly_name: 'Movie Night' }, 'living_room');
   add('vacuum.robot', 'docked', { friendly_name: 'Robot Vacuum' }, null);
   add('weather.home', 'partlycloudy', { friendly_name: 'Home', temperature: 11.2, temperature_unit: '°C', humidity: 81, wind_speed: 14, wind_speed_unit: 'km/h' }, null);
-  add('person.andy', 'home', { friendly_name: 'Andy' }, null);
+  add('person.andy', 'home', { friendly_name: 'Andy', device_trackers: ['device_tracker.pixel_8'] }, null);
+  // Andy's phone sends the app's Bluetooth beacon; Bermuda follows it room to
+  // room and says how far it is from each listener.
+  add('sensor.pixel_8_ble_transmitter', 'Transmitting', { friendly_name: 'Pixel 8 BLE Transmitter', id: '0a1b8d57-aaaa-bbbb-cccc-0123456789ab_100_40004' }, null);
+  add('device_tracker.pixel_8', 'home', { friendly_name: 'Pixel 8' }, null);
+  add('sensor.bermuda_0a1b8d57aaaabbbbcccc0123456789ab_100_40004_area', 'Living Room', { friendly_name: 'Pixel 8 Area' }, null, { platform: 'bermuda' });
+  add('sensor.bermuda_0a1b8d57aaaabbbbcccc0123456789ab_100_40004_distance_to_kitchen_proxy', '2.5', { friendly_name: 'Pixel 8 Distance to Kitchen Proxy', unit_of_measurement: 'm' }, null, { platform: 'bermuda' });
+  add('sensor.bermuda_0a1b8d57aaaabbbbcccc0123456789ab_100_40004_distance_to_hall_proxy', '4', { friendly_name: 'Pixel 8 Distance to Hall Proxy', unit_of_measurement: 'm' }, null, { platform: 'bermuda' });
+  // A tag on the car keys.
+  add('sensor.car_keys_area', 'Kitchen', { friendly_name: 'Car Keys Area' }, null, { platform: 'bermuda' });
   add('person.sam', 'not_home', { friendly_name: 'Sam' }, null);
   const soon = new Date(Date.now() + 2 * 3600e3);
   const fmt = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}:00`;
@@ -133,4 +142,6 @@ export const FAKE_PLAN = {
     { id: 'landing', name: 'Landing', level: 'up', rects: [[0, 5, 9, 7]] },
   ],
   levels: { up: { floor: 2.7 } },
+  // Where the Bluetooth listeners are, for placing people within a room.
+  scanners: { 'Kitchen Proxy': [6, 1], 'Hall Proxy': [1, 6] },
 };

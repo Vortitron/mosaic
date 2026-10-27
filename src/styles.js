@@ -226,6 +226,21 @@ button { font: inherit; color: inherit; background: none; border: 0; padding: 0;
 .plan .floorname { fill: var(--fg2); font-size: .55px; text-anchor: end; dominant-baseline: central; text-transform: lowercase; }
 .plan .slab { fill: color-mix(in srgb, var(--fg) 10%, var(--bg)); stroke: var(--fg2); stroke-width: .1; opacity: .9; }
 
+/* --- the people view -------------------------------------------------------- */
+.plan .room.occupied rect { fill: color-mix(in srgb, var(--accent) 55%, var(--bg)); }
+.plan .who circle { fill: #fff; stroke: var(--accent); stroke-width: .1; }
+.plan .who.thing rect { fill: var(--accent2); stroke: #fff; stroke-width: .06; }
+.plan .who text.init { fill: var(--accent); font-weight: 600; text-anchor: middle; dominant-baseline: central; stroke: none; }
+.plan .who text.whoname { fill: #fff; text-anchor: middle; dominant-baseline: hanging; paint-order: stroke; stroke: rgba(0,0,0,.6); stroke-width: .06; }
+.plan .who.found circle { animation: found 1s ease-in-out infinite alternate; }
+@keyframes found { from { stroke-width: .1; } to { stroke-width: .35; } }
+.wholist { display: flex; flex-wrap: wrap; gap: 6px; margin: 4px 0 6px; }
+.whochip { border: 1px solid var(--line); padding: 4px 9px; font-size: 13px; color: var(--fg2); }
+.whochip b { color: var(--fg); font-weight: 400; }
+.whochip.thing b::before { content: '◆ '; color: var(--accent2); }
+.whochip.on { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 20%, transparent); }
+.whochip.quiet { opacity: .7; }
+
 /* --- the plan editor --------------------------------------------------------- */
 .planart h2 small { color: var(--fg2); font-size: 13px; }
 .planedit-link { font-size: 13px; margin: -6px 0 6px; }

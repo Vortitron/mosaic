@@ -5,6 +5,7 @@
 import { areaOfRoom, bbox, levelSvg, planLevels, stackSvg, validPlan } from './plan.js';
 import { areaClimate, entitiesByArea, guessAreaIcon } from './model.js';
 import { PLAN_MODES } from './plan.js';
+import { findPeople, findThings, initials, locate } from './locator.js';
 
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
 
@@ -89,15 +90,38 @@ export const artMethods = {
     const hass = this._hass;
     const areas = Object.values(hass.areas || {});
     const has = (k) => areas.some((a) => areaClimate(hass, a)[k] !== null);
-    const modes = PLAN_MODES.filter((m) => m === 'lights' || (m === 'temperature' ? has('temp') : has('hum')));
+    const people = () => { const p = findPeople(hass); return p.length || findThings(hass, p).length; };
+    const modes = PLAN_MODES.filter((m) => m === 'lights' || (m === 'people' ? people() : m === 'temperature' ? has('temp') : has('hum')));
     if (modes.length < 2) return '';
     const on = this._planMode();
     return `<div class="planmodes" role="tablist" aria-label="what the plan shows">${modes.map((m) => `<button role="tab" data-mode="${m}" class="${m === on ? 'on' : ''}">${m}</button>`).join('')}</div>`;
   },
 
+  // Who and what is where, worked out once per refresh while the people view is on.
+  _whoNow() {
+    if (this._planMode() !== 'people' || !this._plan) return [];
+    if (this._whoAt === this._hass.states) return this._whoList;
+    this._whoMem = this._whoMem || new Map();
+    this._whoList = locate(this._hass, this._plan, this._whoMem).map((w) => ({ ...w, init: initials(w.name), find: this._findArea === w.areaId }));
+    this._whoAt = this._hass.states;
+    return this._whoList;
+  },
+
+  // Under the plan in the people view: everyone and everything, and where; tap to find.
+  _whoListHtml() {
+    if (this._planMode() !== 'people') return '';
+    const who = this._whoNow();
+    const areas = this._hass.areas || {};
+    const placed = new Set(who.filter((w) => w.kind === 'person').map((w) => w.person));
+    // People Home Assistant knows are home, with no phone to follow round the house.
+    const home = Object.keys(this._hass.states).filter((id) => id.startsWith('person.') && !placed.has(id) && this._hass.states[id].state === 'home');
+    const row = (w) => `<button class="whochip ${w.kind}${this._findArea === w.areaId ? ' on' : ''}" data-find="${esc(w.areaId)}"><b>${esc(w.label)}</b> ${esc((areas[w.areaId] && areas[w.areaId].name) || '')}</button>`;
+    return `<div class="wholist">${who.filter((w) => w.kind === 'person').map(row).join('')}${home.map((id) => `<span class="whochip quiet"><b>${esc(this._hass.states[id].attributes.friendly_name || id)}</b> home</span>`).join('')}${who.filter((w) => w.kind === 'thing').map(row).join('')}</div>`;
+  },
+
   // Every storey stacked into one tilted picture of the house.
   _stackHtml(highlight) {
-    return stackSvg(this._levels(), this._hass, entitiesByArea(this._hass), { highlight, mode: this._planMode() });
+    return stackSvg(this._levels(), this._hass, entitiesByArea(this._hass), { highlight, mode: this._planMode(), who: this._whoNow() });
   },
 
   // A storey (or every storey) as live SVG. highlight picks out one room.
@@ -107,7 +131,7 @@ export const artMethods = {
     const mode = this._planMode();
     const levels = this._levels().filter((l) => level === null || l.key === level);
     // Side by side, each storey as wide as it really is: one scale for the house.
-    return levels.map((l) => `<figure class="storey" style="flex-grow:${bbox(l.rooms).w.toFixed(1)}">${levels.length > 1 || level === null ? `<figcaption>${esc(l.name)}</figcaption>` : ''}${levelSvg(l, this._hass, byArea, { highlight, labels, mode })}</figure>`).join('');
+    return levels.map((l) => `<figure class="storey" style="flex-grow:${bbox(l.rooms).w.toFixed(1)}">${levels.length > 1 || level === null ? `<figcaption>${esc(l.name)}</figcaption>` : ''}${levelSvg(l, this._hass, byArea, { highlight, labels, mode, who: this._whoNow() })}</figure>`).join('');
   },
 
   // The Start screen's own picture of the house: a group of its own beside the tiles.
@@ -116,7 +140,7 @@ export const artMethods = {
     const stack = this._config.plan_view !== 'flat';
     const sketch = this._planIsSketch ? '<small> · a sketch of your rooms</small>' : '';
     const edit = this._canEdit() ? `<button class="link planedit-link" data-planedit="">${this._planIsSketch ? 'draw it properly' : 'edit the plan'}</button>` : '';
-    return `<section class="group planart" aria-label="the house"><h2>the house${sketch}</h2>${edit}${this._planModesHtml()}<div class="liveplan" data-plan="all"${stack ? ' data-stack="1"' : ''}>${this._planHtml({ labels: true, stack })}</div></section>`;
+    return `<section class="group planart" aria-label="the house"><h2>the house${sketch}</h2>${edit}${this._planModesHtml()}<div class="liveplan" data-plan="all"${stack ? ' data-stack="1"' : ''}>${this._planHtml({ labels: true, stack })}</div><div class="whobox">${this._whoListHtml()}</div></section>`;
   },
 
   // Art for an app's empty side: the plan with this room picked out, or a
@@ -160,21 +184,35 @@ export const artMethods = {
     const byArea = entitiesByArea(this._hass);
     const mode = this._planMode();
     const areas = this._hass.areas || {};
-    const sig = mode + [...byArea.entries()].map(([a, ids]) => {
+    const who = mode === 'people' ? this._whoNow().map((w) => `${w.key}@${w.areaId}:${w.at ? w.at.map((v) => v.toFixed(1)).join(',') : ''}`).join(';') + (this._findArea || '') : '';
+    const sig = mode + who + [...byArea.entries()].map(([a, ids]) => {
+      if (mode === 'people') return `${a}:${ids.filter((id) => id.startsWith('binary_sensor.') && this._hass.states[id] && this._hass.states[id].state === 'on').length}`;
       if (mode === 'lights') return `${a}:${ids.filter((id) => (id.startsWith('light.') || id.startsWith('media_player.')) && this._hass.states[id] && ['on', 'playing'].includes(this._hass.states[id].state)).length}`;
       const c = areas[a] ? areaClimate(this._hass, areas[a], ids) : {};
       return `${a}:${mode === 'temperature' ? c.temp : c.hum}`;
     }).join(',');
     if (!force && sig === this._planSig) return;
     this._planSig = sig;
+    for (const box of this.shadowRoot.querySelectorAll('.whobox')) box.innerHTML = this._whoListHtml();
     for (const el of [...this.shadowRoot.querySelectorAll('.liveplan')]) {
       const lv = el.dataset.plan;
-      el.innerHTML = this._planHtml({ level: lv === 'all' ? null : lv === 'main' ? '' : lv, highlight: el.dataset.highlight || null, stack: !!el.dataset.stack });
+      el.innerHTML = this._planHtml({ level: lv === 'all' ? null : lv === 'main' ? '' : lv, highlight: el.dataset.highlight || this._findArea || null, stack: !!el.dataset.stack });
     }
   },
 
   // A room on any plan: open it. The view switch: change what every plan shows.
   _planClick(e) {
+    // Finding someone: their room picked out on the plan for a little while.
+    const find = e.target.closest && e.target.closest('[data-find]');
+    if (find) {
+      e.stopPropagation();
+      this._findArea = this._findArea === find.dataset.find ? null : find.dataset.find;
+      this._whoAt = null;
+      clearTimeout(this._findTimer);
+      if (this._findArea) this._findTimer = setTimeout(() => { this._findArea = null; this._whoAt = null; this._refreshPlans(true); }, 8000);
+      this._refreshPlans(true);
+      return true;
+    }
     const mode = e.target.closest && e.target.closest('.planmodes button');
     if (mode) {
       e.stopPropagation();

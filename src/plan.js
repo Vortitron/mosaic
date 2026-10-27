@@ -79,7 +79,7 @@ export function roomState(hass, area, entitiesByArea) {
 }
 
 // What the plan shows: which rooms are lit, how warm, or how damp.
-export const PLAN_MODES = ['lights', 'temperature', 'humidity'];
+export const PLAN_MODES = ['lights', 'temperature', 'humidity', 'people'];
 
 // Colours for the warm and damp views: cold blue through green to hot red;
 // dry pale to damp deep blue.
@@ -94,7 +94,7 @@ export function damp(h) {
 
 // A storey's shapes, and its labels as points: drawn flat by levelSvg, or
 // tilted into a stack by stackSvg (where the labels stay upright).
-function levelParts(level, hass, entitiesByArea, { highlight = null, labels = true, mode = 'lights', slab = false } = {}) {
+function levelParts(level, hass, entitiesByArea, { highlight = null, labels = true, mode = 'lights', slab = false, who = [] } = {}) {
   const shapes = [];
   const marks = [];
   const rooms = [...level.rooms].sort((a, b) => (a.outdoor ? 0 : 1) - (b.outdoor ? 0 : 1));
@@ -113,15 +113,20 @@ function levelParts(level, hass, entitiesByArea, { highlight = null, labels = tr
   // Outlines first, then the fills over them: rectangles of one room join
   // without a seam, and the outline is left only round the outside.
   for (const r of rooms) for (const q of r.rects) shapes.push(rect(q, `wall${r.outdoor ? ' out' : ''}`));
+  // Who is on this floor, and which rooms have someone in them (a person or
+  // thing placed there, or a motion or presence sensor that sees someone).
+  const here = who.filter((w) => w.at && (w.level || '') === (level.key || ''));
+  const occupied = (area) => !!area && (here.some((w) => w.areaId === area.area_id) || (entitiesByArea.get(area.area_id) || []).some((id) => id.startsWith('binary_sensor.') && hass.states[id] && hass.states[id].state === 'on' && ['motion', 'occupancy', 'presence'].includes(hass.states[id].attributes.device_class)));
   for (const r of rooms) {
     const area = areaOfRoom(hass, r);
     const s = roomState(hass, area, entitiesByArea);
     const lights = mode === 'lights';
+    const busy = mode === 'people' && occupied(area);
     const c = climateOf(area);
     const value = mode === 'temperature' ? c.temp : mode === 'humidity' ? c.hum : null;
     const fill = value === null ? '' : mode === 'temperature' ? warmth(value) : damp(value);
-    const here = highlight && area && area.area_id === highlight;
-    const cls = ['room', r.outdoor ? 'out' : '', lights && s.lit ? 'lit' : '', lights && s.playing ? 'playing' : '', area ? 'known' : '', fill ? 'measured' : '', here ? 'here' : '', highlight && !here ? 'dim' : ''].filter(Boolean).join(' ');
+    const isHere = highlight && area && area.area_id === highlight;
+    const cls = ['room', r.outdoor ? 'out' : '', lights && s.lit ? 'lit' : '', lights && s.playing ? 'playing' : '', busy ? 'occupied' : '', area ? 'known' : '', fill ? 'measured' : '', isHere ? 'here' : '', highlight && !isHere ? 'dim' : ''].filter(Boolean).join(' ');
     const say = lights ? (s.lit ? `, ${s.lit} light${s.lit === 1 ? '' : 's'} on` : '') : value !== null ? `, ${value}${mode === 'temperature' ? '°' : '%'}` : '';
     const attrs = area ? ` data-area="${esc(area.area_id)}" role="button" tabindex="0" aria-label="${esc(area.name)}${say}"` : '';
     shapes.push(`<g class="${cls}"${attrs}${fill ? ` style="--fill:${fill}"` : ''}>${r.rects.map((q) => rect(q)).join('')}</g>`);
@@ -131,17 +136,28 @@ function levelParts(level, hass, entitiesByArea, { highlight = null, labels = tr
     const w = Math.abs(big[2] - big[0]);
     const h = Math.abs(big[3] - big[1]);
     const name = (area && area.name) || r.name || r.id;
-    const on = (lights && s.lit) || value !== null || here;
+    const on = (lights && s.lit) || value !== null || isHere || busy;
     const size = Math.max(0.28, Math.min(0.75, h * 0.3, (w * 1.6) / Math.max(4, name.length)));
     const reading = value === null ? null : `${Math.round(value * 10) / 10}${mode === 'temperature' ? '°' : '%'}`;
     const rsize = reading ? Math.max(0.36, Math.min(1.1, h * 0.38, (w * 1.7) / Math.max(3, reading.length))) : 0;
-    marks.push({ x: Math.min(big[0], big[2]) + w / 2, y: Math.min(big[1], big[3]) + h / 2, name, on, size, reading, rsize });
+    // With people on the plan, a room's name goes to the bottom of the room, out of their way.
+    const low = mode === 'people';
+    marks.push({ x: Math.min(big[0], big[2]) + w / 2, y: low ? Math.max(big[1], big[3]) - size * 0.9 : Math.min(big[1], big[3]) + h / 2, name, on, size, reading, rsize });
   }
+  if (mode === 'people') for (const w of here) marks.push({ who: true, kind: w.kind, x: w.at[0], y: w.at[1], init: w.init, name: w.name, area: w.areaId, find: w.find });
   return { shapes: shapes.join(''), marks };
 }
 
 // A label at a point: the reading big with the name under it, or the name.
 function markText(m, x, y, scale = 1) {
+  if (m.who) {
+    // A person: a round marker with initials; a thing: a small diamond. The name under it.
+    const r = 0.42 * scale;
+    const shape = m.kind === 'person'
+      ? `<circle cx="${x.toFixed(2)}" cy="${y.toFixed(2)}" r="${r.toFixed(2)}"/><text class="init" x="${x.toFixed(2)}" y="${y.toFixed(2)}" font-size="${(r * 0.95).toFixed(2)}">${esc(m.init)}</text>`
+      : `<rect x="${(x - r * 0.6).toFixed(2)}" y="${(y - r * 0.6).toFixed(2)}" width="${(r * 1.2).toFixed(2)}" height="${(r * 1.2).toFixed(2)}" transform="rotate(45 ${x.toFixed(2)} ${y.toFixed(2)})"/>`;
+    return `<g class="who ${m.kind}${m.find ? ' found' : ''}" data-area="${esc(m.area)}">${shape}<text class="whoname" x="${x.toFixed(2)}" y="${(y + r + 0.32 * scale).toFixed(2)}" font-size="${(0.34 * scale).toFixed(2)}">${esc(m.name)}</text></g>`;
+  }
   const size = m.size * scale;
   if (m.reading) {
     const rs = m.rsize * scale;
@@ -163,7 +179,7 @@ export function levelSvg(level, hass, entitiesByArea, opts = {}) {
 // (an isometric view), the top floor highest and drawn last, the room names
 // upright over their rooms. One SVG, so it stays sharp and fits exactly.
 export const STACK = { turn: -32, flatten: 0.52, gap: 0.62 };
-export function stackSvg(levels, hass, entitiesByArea, { highlight = null, mode = 'lights', title = 'the house' } = {}) {
+export function stackSvg(levels, hass, entitiesByArea, { highlight = null, mode = 'lights', title = 'the house', who = [] } = {}) {
   const box = bbox(levels.flatMap((l) => l.rooms));
   const cx = box.x1 + box.w / 2;
   const cy = box.y1 + box.h / 2;
@@ -183,7 +199,7 @@ export function stackSvg(levels, hass, entitiesByArea, { highlight = null, mode 
   // Bottom floor first, so each floor up is drawn over the one below it.
   const layers = levels.map((l, i) => ({ l, i })).reverse().map(({ l, i }) => {
     const dy = i * gap;
-    const { shapes, marks } = levelParts(l, hass, entitiesByArea, { highlight, mode, slab: true });
+    const { shapes, marks } = levelParts(l, hass, entitiesByArea, { highlight, mode, slab: true, who });
     // The floor's name off its left-hand corner, clear of the floor above.
     const leftCorner = corners.reduce((p, q) => (q[0] < p[0] ? q : p));
     return `<g class="lift"><g transform="translate(0 ${dy.toFixed(2)}) matrix(${[a, b, c, d].map((v) => v.toFixed(4)).join(' ')} ${(-a * cx - c * cy).toFixed(3)} ${(-b * cx - d * cy).toFixed(3)})">${shapes}</g>`
