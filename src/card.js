@@ -6,6 +6,7 @@
 // columns: 6              # small-tile columns on a phone (6 or 8)
 // list: devices           # what the A-Z list starts on: devices | entities (each viewer can switch)
 // editable: true          # admins hold a tile to customise Start; false: hold opens the dialog
+// settings: true          # admins get a settings tile: devices, integrations, what needs fixing
 // light_colours: false    # true: a lit lamp's tile takes the lamp's colour
 // wallpaper: /local/me.jpg  # or camera.x / image.x: seen through the tiles, as on Windows Phone 10
 // assistant:              # false hides it
@@ -30,8 +31,11 @@ import {
 import { Conversation, resolveAgent } from './assistant.js';
 import { MosaicStartEditor } from './editor.js';
 import { VoiceRun, canListen } from './voice.js';
+import { ManageStore } from './manage-store.js';
+import { attention } from './manage-model.js';
+import { settingsMethods } from './settings.js';
 
-const VERSION = '0.6.0';
+const VERSION = '0.7.0-dev';
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
 const reduced = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
 const ON = ['on', 'open', 'opening', 'unlocked', 'playing', 'home', 'heat', 'cool', 'heat_cool', 'auto', 'cleaning'];
@@ -98,6 +102,26 @@ class MosaicStart extends HTMLElement {
     }
     if (!this.shadowRoot.querySelector('.root')) this._render();
     else this._schedule();
+    // The registries are big on a real home: read them once the dashboard
+    // has painted, not before.
+    if (!this._store && !this._storeSoon && this._canManage()) this._storeSoon = setTimeout(() => this._ensureStore(), 2500);
+  }
+
+  _ensureStore() {
+    clearTimeout(this._storeSoon);
+    if (this._store || !this._canManage() || !this._hass) return;
+    this._store = new ManageStore(() => this._onStore());
+    this._store.start(this._hass);
+  }
+
+  _onStore() {
+    this._settingsInfo = null;
+    this._refreshTiles();
+    const o = this._overlay;
+    if (!o) return;
+    if (o.kind === 'settings') this._renderSettings();
+    if (o.kind === 'integration') this._renderIntegration();
+    if (o.kind === 'device') this._renderApp();
   }
 
   get hass() {
@@ -129,6 +153,10 @@ class MosaicStart extends HTMLElement {
     clearInterval(this._tick);
     clearInterval(this._minute);
     window.removeEventListener('keydown', this._onKey);
+    clearTimeout(this._storeSoon);
+    this._storeSoon = null;
+    if (this._store) this._store.stop();
+    this._store = null;
   }
 
   // --- layout ------------------------------------------------------------------
@@ -137,7 +165,7 @@ class MosaicStart extends HTMLElement {
     const c = this._config;
     if (c.groups) return c.groups.map((g) => ({ name: g.name || '', tiles: g.tiles || [] }));
     if (c.tiles) return [{ name: '', tiles: c.tiles }];
-    return autoGroups(this._hass, { assistant: c.assistant !== false });
+    return autoGroups(this._hass, { assistant: c.assistant !== false, settings: this._canManage() });
   }
 
   _dark() {
@@ -365,11 +393,20 @@ class MosaicStart extends HTMLElement {
     if (this._overlay && (this._overlay.kind === 'room' || this._overlay.kind === 'device')) this._renderApp();
   }
 
+  _settingsSummary() {
+    if (!this._store || !this._store.data.ready) return null;
+    if (this._settingsInfo && this._settingsInfo.states === this._hass.states) return this._settingsInfo;
+    const items = attention(this._store.data, this._hass);
+    this._settingsInfo = { states: this._hass.states, count: items.length, first: items[0] ? items[0].title : '' };
+    return this._settingsInfo;
+  }
+
   _refreshTiles() {
     const now = Date.now();
+    const settings = this._settingsSummary();
     const assistant = this._agent ? { name: this._agent.name, last: this._conv.last } : null;
     for (const t of this._tiles.values()) {
-      const m = tileModel(this._hass, t.spec, now, assistant);
+      const m = tileModel(this._hass, t.spec, now, assistant, settings);
       const sig = JSON.stringify(m);
       t.model = m;
       if (sig === t.sig) continue;
@@ -583,6 +620,7 @@ class MosaicStart extends HTMLElement {
     const a = t.model.tap;
     if (a.action === 'room') return this._openApp({ kind: 'room', area: a.area });
     if (a.action === 'assistant') return this._openAssist();
+    if (a.action === 'settings') return this._openSettings();
     if (a.action === 'more-info') return this._moreInfo(a.entity);
     if (a.action === 'none') return;
     this._act(a.action, a.entity);
@@ -817,8 +855,9 @@ class MosaicStart extends HTMLElement {
     this._hass.callService(...svc).catch((e) => this._ask({ title: "that didn't work", text: (e && e.message) || String(e), yes: 'ok', noCancel: true }));
   }
 
-  _moreInfo(entityId) {
-    this.dispatchEvent(new CustomEvent('hass-more-info', { detail: { entityId }, bubbles: true, composed: true }));
+  _moreInfo(entityId, view) {
+    const detail = view ? { entityId, view } : { entityId };
+    this.dispatchEvent(new CustomEvent('hass-more-info', { detail, bubbles: true, composed: true }));
   }
 
   _key(e) {
@@ -842,6 +881,8 @@ class MosaicStart extends HTMLElement {
       // A question asked from inside a room goes back to the room.
       if (prev.kind === 'room' || prev.kind === 'device') this._openApp(prev);
       else if (prev.kind === 'assist') this._openAssist();
+      else if (prev.kind === 'settings') this._openSettings(prev.pivot);
+      else if (prev.kind === 'integration') this._openIntegration(prev.domain, prev.under || null);
     }
   }
 
@@ -887,8 +928,17 @@ class MosaicStart extends HTMLElement {
   _openApp(spec) {
     const parts = this._appParts(spec);
     if (!parts) return;
-    this._overlay = { kind: spec.kind, area: spec.area, device: spec.device };
+    // Where back goes: settings, or the integration this device was opened from.
+    const prev = this._overlay;
+    const under = spec.under !== undefined ? spec.under
+      : prev && (prev.kind === 'settings' || prev.kind === 'integration') ? { ...prev, under: undefined, pivot: prev.kind === 'settings' ? 'devices' : prev.pivot }
+      : null;
+    this._overlay = { kind: spec.kind, area: spec.area, device: spec.device, under };
     const pivots = pivotsFor(this._hass, parts.ids);
+    if (spec.kind === 'device' && this._canManage()) {
+      this._ensureStore();
+      pivots.push(['settings', []]);
+    }
     const layer = this._layer();
     layer.innerHTML = `<div class="overlay app ${this.shadowRoot.querySelector('.root').classList.contains('desk') ? 'wideapp' : ''}" role="dialog" aria-label="${esc(parts.title)}">
       <div class="apptitle"><button class="back" aria-label="back">&larr;</button><span>${esc(parts.title)}${parts.sub ? `<small>${esc(parts.sub)}</small>` : ''}</span></div>
@@ -905,7 +955,19 @@ class MosaicStart extends HTMLElement {
       heads.forEach((b, j) => b.classList.toggle('on', j === i));
       if (heads[i]) heads[i].scrollIntoView({ block: 'nearest', inline: 'nearest' });
     });
-    pages.addEventListener('click', (e) => this._roomClick(e));
+    pages.addEventListener('click', async (e) => {
+      if (e.target.closest('.ppage[data-pivot="settings"]')) {
+        await this._deviceSettingsEvent(e);
+        return;
+      }
+      this._roomClick(e);
+    });
+    pages.addEventListener('change', (e) => {
+      if (e.target.closest('.ppage[data-pivot="settings"]')) this._deviceSettingsEvent(e);
+    });
+    pages.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' && e.target.classList.contains('fname')) e.target.blur();
+    });
     this._renderApp();
   }
 
@@ -917,11 +979,19 @@ class MosaicStart extends HTMLElement {
     if (!parts) return;
     const pivots = pivotsFor(this._hass, parts.ids);
     for (const page of app.querySelectorAll('.ppage[data-pivot]')) {
-      const ids = (pivots.find(([p]) => p === page.dataset.pivot) || [null, []])[1];
-      const html = ids.map((id) => this._roomRow(id, parts.within)).join('');
+      let html;
+      if (page.dataset.pivot === 'settings') {
+        // Never redraw under someone typing a name.
+        if (page.contains(this.shadowRoot.activeElement)) continue;
+        html = this._deviceSettingsHtml(o.device);
+      } else {
+        const ids = (pivots.find(([p]) => p === page.dataset.pivot) || [null, []])[1];
+        html = ids.map((id) => this._roomRow(id, parts.within)).join('');
+      }
       if (page.dataset.html === html) continue;
       page.dataset.html = html;
       page.innerHTML = html;
+      this._hydrate(page);
     }
   }
 
@@ -1163,6 +1233,8 @@ class MosaicStart extends HTMLElement {
     talk.scrollTop = talk.scrollHeight;
   }
 }
+
+Object.assign(MosaicStart.prototype, settingsMethods);
 
 class MosaicStrategy extends HTMLElement {
   // The same settings for a whole Mosaic dashboard ("Edit dashboard").

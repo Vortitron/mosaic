@@ -80,6 +80,8 @@ const IMPORTANT_PLATFORMS = [
   'victron', 'solaredge', 'sma', 'huawei_solar', 'growatt_server', 'goodwe', 'fronius',
   'enphase_envoy', 'solax', 'foxess', 'tesla_fleet', 'teslemetry', 'tessie', 'powerwall',
   'wallbox', 'easee', 'zaptec', 'ocpp', 'myenergi', 'ohme', 'evcc',
+  // Add-on (app) switches: turning off the Thread border router or Zigbee2MQTT takes devices with it.
+  'hassio',
 ];
 const IMPORTANT_ROOMS = ['comms', 'server', 'network', 'rack', 'plant', 'boiler'];
 const words = (text) => ` ${String(text || '').toLowerCase().replace(/[^a-z0-9_]+/g, ' ')} `;
@@ -240,7 +242,7 @@ function buildDeviceList(hass, filter) {
 
 // The Start screen a home gets when nobody has laid one out: the date and
 // the assistant first, then each floor's rooms.
-export function autoGroups(hass, { assistant = true } = {}) {
+export function autoGroups(hass, { assistant = true, settings = false } = {}) {
   const by = entitiesByArea(hass);
   const all = [...by.values()].flat();
   const first = (d) => all.find((id) => domainOf(id) === d) || Object.keys(hass.states).find((id) => domainOf(id) === d);
@@ -251,6 +253,7 @@ export function autoGroups(hass, { assistant = true } = {}) {
   const people = Object.keys(hass.states).filter((id) => domainOf(id) === 'person' && isUseful(hass, id) && !unavailable(hass.states[id])).slice(0, 4);
   for (const p of people) top.push({ entity: p, size: people.length > 2 ? 'small' : 'medium' });
   if (all.some((id) => domainOf(id) === 'media_player')) top.push({ type: 'media', size: 'wide' });
+  if (settings) top.push({ type: 'settings', size: 'medium' });
   const groups = [{ name: '', tiles: top }];
 
   const areas = Object.values(hass.areas || {}).filter((a) => (by.get(a.area_id) || []).length);
@@ -416,15 +419,18 @@ function guessAreaIcon(name) {
 function clockTile(hass, spec, now) {
   const d = new Date(now);
   const faces = [{ kind: 'date', day: String(d.getDate()), wd: WEEKDAYS[d.getDay()], month: MONTHS[d.getMonth()] }];
-  const next = nextEvent(hass, now);
+  const next = nextEvent(hass, now, spec.calendars);
   if (next) faces.push({ kind: 'text', t1: next.when, t2: next.title, t3: next.calendar });
   return { label: spec.name || '', active: true, faces, tap: next ? { action: 'more-info', entity: next.entity } : { action: 'none' } };
 }
 
-export function nextEvent(hass, now) {
+// The soonest event; `only` limits it to some calendars (a home subscribed to
+// every holiday calendar going wants its own appointments on the tile).
+export function nextEvent(hass, now, only) {
   let best = null;
   for (const id of Object.keys(hass.states)) {
     if (domainOf(id) !== 'calendar') continue;
+    if (only && only.length && !only.includes(id)) continue;
     const a = hass.states[id].attributes;
     if (!a.message || !a.start_time) continue;
     const start = new Date(String(a.start_time).replace(' ', 'T')).getTime();
@@ -449,7 +455,7 @@ function mediaTile(hass, spec, now) {
   return { ...m, label: spec.name || nameOf(hass, pick), active: hass.states[pick].state === 'playing' };
 }
 
-export function tileModel(hass, spec, now = Date.now(), assistant = null) {
+export function tileModel(hass, spec, now = Date.now(), assistant = null, settings = null) {
   const size = SIZES[spec.size] ? spec.size : 'medium';
   let m;
   if (spec.type === 'clock') m = clockTile(hass, spec, now);
@@ -458,6 +464,13 @@ export function tileModel(hass, spec, now = Date.now(), assistant = null) {
     const last = assistant && assistant.last;
     m = { label: name, active: true, faces: [{ kind: 'ring' }, ...(last ? [{ kind: 'text', t1: 'last time', t2: last }] : [])], tap: { action: 'assistant' } };
   } else if (spec.type === 'media') m = mediaTile(hass, spec, now);
+  else if (spec.type === 'settings') {
+    // Windows Phone's Settings tile, with a count of what needs you.
+    const n = settings ? settings.count : 0;
+    const faces = [{ kind: 'icon', mdi: 'mdi:cog' }];
+    if (n) faces.push({ kind: 'text', t1: n === 1 ? 'needs you' : `${n} things need you`, t2: settings.first });
+    m = { label: spec.name || 'settings', active: true, badge: n ? String(n) : null, faces, tap: { action: 'settings' } };
+  }
   else if (spec.area) m = areaTile(hass, { ...spec, size }, now);
   else if (spec.entity) m = entityTile(hass, spec, now);
   else m = { label: spec.name || '?', active: false, faces: [{ kind: 'text', t1: 'empty tile', t2: '' }], tap: { action: 'none' } };

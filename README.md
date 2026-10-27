@@ -66,7 +66,8 @@ groups:                 # leave out to have Mosaic lay the home out itself
       - entity: light.sofa
       - entity: camera.garden
         size: wide
-      - type: clock       # clock | assistant | media (whatever is playing)
+      - type: clock       # clock | assistant | media (whatever is playing) | settings
+        calendars: [calendar.family]   # the date tile's next event: only these calendars
 ```
 
 Tap a tile to toggle it, or to open its room. Holding a tile customises Start (admins), or opens Home Assistant's dialog for it (everyone else; `editable: false` makes that the rule for admins too). Locks, alarms and climate never act on a tap; they open the dialog instead. A switch that looks like it runs the house (servers, a fridge, a boiler, an EV charger and the like) asks before it switches.

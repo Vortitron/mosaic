@@ -169,3 +169,20 @@ test('the assistant listens only when its pipeline has speech-to-text', async ()
   a = await resolveAgent(pipes([p1, p2], 'p1'), { agent_id: 'conversation.claude', voice: false, speak: false });
   assert.deepEqual([a.listens, a.speaks], [false, false]);
 });
+
+test('add-on switches always ask: a Thread border router going off takes devices with it', () => {
+  const h = { ...hass, states: { ...hass.states, 'switch.openthread_border_router': { entity_id: 'switch.openthread_border_router', state: 'on', attributes: { friendly_name: 'OpenThread Border Router' } }, 'switch.legacy_site_wide_battery_cover': { entity_id: 'switch.legacy_site_wide_battery_cover', state: 'on', attributes: { friendly_name: 'Legacy Site-wide Battery Cover' } } },
+    entities: { ...hass.entities, 'switch.openthread_border_router': { entity_id: 'switch.openthread_border_router', platform: 'hassio' }, 'switch.legacy_site_wide_battery_cover': { entity_id: 'switch.legacy_site_wide_battery_cover', platform: 'mqtt' } } };
+  assert.equal(looksImportant(h, 'switch.openthread_border_router'), true);
+  assert.equal(looksImportant(h, 'switch.legacy_site_wide_battery_cover'), true);
+});
+
+test('the date tile can be told which calendars count', () => {
+  const later = new Date(Date.now() + 5 * 3600e3);
+  const fmt = (d) => d.toISOString().slice(0, 19).replace('T', ' ');
+  const h = { ...hass, states: { ...hass.states, 'calendar.holidays': { entity_id: 'calendar.holidays', state: 'off', attributes: { friendly_name: 'Holidays', message: 'Somebody else\'s holiday', start_time: fmt(new Date(Date.now() + 3600e3)) } } } };
+  assert.equal(nextEvent(h, Date.now()).title, "Somebody else's holiday");
+  assert.equal(nextEvent(h, Date.now(), ['calendar.family']).title, 'Dentist');
+  assert.equal(tileModel(h, { type: 'clock', calendars: ['calendar.family'] }).faces[1].t2, 'Dentist');
+  void later;
+});
