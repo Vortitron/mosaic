@@ -84,13 +84,18 @@ export function attention(store, hass) {
     if (!DISCOVERY.includes(source) || source === 'import') continue;
     const placeholders = (f.context && f.context.title_placeholders) || {};
     const name = placeholders.name || placeholders.host || placeholders.model || '';
+    const by = integrationName(store, f.handler);
+    // Home Assistant shows a found device by its address. Often it is one you
+    // already have through another integration (a Tuya plug found by Tuya
+    // Local, say): the discovery's unique id is that device's id, so say which.
+    const known = knownDevice(store, f.context && f.context.unique_id, f.handler);
     items.push({
       kind: 'flow',
       key: `flow:${f.flow_id}`,
       flow: f.flow_id,
       domain: f.handler,
-      title: name ? `${name}` : `New ${integrationName(store, f.handler)} device`,
-      sub: `found by ${integrationName(store, f.handler)}`,
+      title: known ? deviceLabel(known.device) : name || `New ${by} device`,
+      sub: known ? `you have it through ${integrationName(store, known.domain)}; ${by} can run it directly${name ? ` (${name})` : ''}` : `found by ${by}`,
     });
   }
   for (const i of store.issues) {
@@ -121,6 +126,20 @@ export function attention(store, hass) {
     items.push({ kind: 'offline', key: `offline:${dev.id}`, device: dev.id, title: deviceLabel(dev), sub: [areaName(store, roomOf(store, dev)), 'not responding'].filter(Boolean).join(' · ') });
   }
   return items;
+}
+
+function knownDevice(store, uid, handler) {
+  if (!uid) return null;
+  for (const device of store.devices) {
+    const hit = (device.identifiers || []).find((i) => i[1] === uid && i[0] !== handler) || (device.connections || []).find((c) => c[1] === uid);
+    if (hit) return { device, domain: (device.identifiers || []).find((i) => i[1] === uid) ? hit[0] : entryDomainOf(store, device) };
+  }
+  return null;
+}
+
+function entryDomainOf(store, device) {
+  const entry = store.entries.find((e) => (device.config_entries || []).includes(e.entry_id));
+  return entry ? entry.domain : '';
 }
 
 export const ATTENTION_SECTIONS = [

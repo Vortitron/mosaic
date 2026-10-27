@@ -35,7 +35,7 @@ import { ManageStore } from './manage-store.js';
 import { attention } from './manage-model.js';
 import { settingsMethods } from './settings.js';
 
-const VERSION = '0.7.0-beta.2';
+const VERSION = '0.7.0-beta.3';
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
 const reduced = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
 const ON = ['on', 'open', 'opening', 'unlocked', 'playing', 'home', 'heat', 'cool', 'heat_cool', 'auto', 'cleaning'];

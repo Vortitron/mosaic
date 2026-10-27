@@ -92,3 +92,10 @@ test("a device without a room takes its entities' room, if they agree", () => {
   const loft = deviceRows(s2, hass).find(([g]) => g === 'Loft')[1].map((r) => r.name);
   assert.ok(loft.includes('Speaker'));
 });
+
+test('a found device that you already have is called by its name', () => {
+  const s2 = { ...store, manifests: { ...store.manifests, tuya: { name: 'Tuya' } }, devices: [...store.devices, { id: 'd9', name: 'Smart Plug', name_by_user: 'Washing machine', identifiers: [['tuya', 'bfa722']], config_entries: [] }], flows: [{ flow_id: 'f9', handler: 'tuya_local', context: { source: 'integration_discovery', unique_id: 'bfa722', title_placeholders: { name: '192.168.1.78' } } }] };
+  const found = attention(s2, hass).find((i) => i.kind === 'flow');
+  assert.equal(found.title, 'Washing machine');
+  assert.equal(found.sub, 'you have it through Tuya; Tuya Local can run it directly (192.168.1.78)');
+});
