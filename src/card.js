@@ -45,7 +45,7 @@ import { planEditMethods } from './plan-edit.js';
 import { locate } from './locator.js';
 import { gaugeSvg } from './gauge.js';
 
-const VERSION = '0.7.0-beta.14';
+const VERSION = '0.7.0-beta.15';
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
 const reduced = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
 const ON = ['on', 'open', 'opening', 'unlocked', 'playing', 'home', 'heat', 'cool', 'heat_cool', 'auto', 'cleaning'];
@@ -1240,6 +1240,15 @@ class MosaicStart extends HTMLElement {
   _stepHeat(t, dir) {
     const heat = t.back && t.back.heat;
     if (!heat) return;
+    // Something that runs part of the house asks once, then steps freely
+    // while you are at it.
+    this._heatOk = this._heatOk || new Map();
+    if (heat.asks && !(Date.now() - (this._heatOk.get(heat.entity) || 0) < 5 * 60000)) {
+      return this._ask({ title: `Change ${t.back.title}?`, text: `${nameOf(this._hass, heat.entity)} looks like it runs part of the house, so Mosaic asks before changing its setting.`, yes: 'change it', then: () => {
+        this._heatOk.set(heat.entity, Date.now());
+        this._stepHeat(t, dir);
+      } });
+    }
     this._pendingHeat = this._pendingHeat || new Map();
     const shown = this._heatShown(heat);
     const target = +Math.min(heat.max, Math.max(heat.min, shown.target + dir * heat.step)).toFixed(2);

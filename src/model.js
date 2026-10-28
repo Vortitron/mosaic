@@ -90,14 +90,18 @@ const words = (text) => ` ${String(text || '').toLowerCase().replace(/[^a-z0-9_]
 const startsWord = (text, h) => new RegExp(`[ ._]${h.replace('_', '[ _]?')}`).test(text);
 const wholeWord = (text, w) => new RegExp(`[ ._]${w}[0-9]*(?=[ ._])`).test(text);
 
-export function looksImportant(hass, id) {
-  if (domainOf(id) !== 'switch') return false;
+// anyDomain: judge a thermostat or a setpoint by the same words and rooms
+// (a boiler's thermostat asks before its setting moves).
+export function looksImportant(hass, id, { anyDomain = false } = {}) {
+  if (!anyDomain && domainOf(id) !== 'switch') return false;
   const entry = hass.entities && hass.entities[id];
   if (entry && IMPORTANT_PLATFORMS.includes(entry.platform)) return true;
   const area = areaOf(hass, id);
   if (area && IMPORTANT_ROOMS.some((r) => startsWord(words(`${area.area_id} ${area.name}`), r))) return true;
   const text = words(`${id} ${nameOf(hass, id)}`);
-  return IMPORTANT_HINTS.some((h) => startsWord(text, h)) || IMPORTANT_WORDS.some((w) => wholeWord(text, w));
+  // A thermostat heats; that alone is not what makes one matter.
+  const hints = anyDomain ? IMPORTANT_HINTS.filter((h) => h !== 'heater' && h !== 'heating') : IMPORTANT_HINTS;
+  return hints.some((h) => startsWord(text, h)) || IMPORTANT_WORDS.some((w) => wholeWord(text, w));
 }
 
 export function nameOf(hass, id) {

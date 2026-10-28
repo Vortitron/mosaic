@@ -24,9 +24,22 @@ export const HEAT_DOMAINS = ['climate', 'water_heater', 'number', 'input_number'
 export function heatingOf(hass, areaId, rooms = null) {
   const chosen = rooms && rooms[areaId] && rooms[areaId].heating;
   if (chosen && hass.states[chosen] && HEAT_DOMAINS.includes(domainOf(chosen))) return chosen;
-  const ids = entitiesByArea(hass).get(areaId) || [];
-  return ids.find((id) => domainOf(id) === 'climate' && num(hass.states[id].attributes.temperature) !== null)
-    || ids.find((id) => domainOf(id) === 'climate') || null;
+  // The room's thermostats, best first: one heating now, then one that can
+  // heat, then the rest. A fan or an air purifier dressed as a climate entity
+  // goes last (GamlaBio's living room: a circulation fan, off, ahead of the
+  // heat pump that warms it).
+  const rank = (id) => {
+    const st = hass.states[id];
+    const a = st.attributes;
+    const modes = a.hvac_modes || [];
+    let r = ['heat', 'heat_cool', 'auto'].includes(st.state) ? 0 : modes.some((m) => ['heat', 'heat_cool', 'auto'].includes(m)) ? 1 : 2;
+    if (num(a.temperature) === null) r += 3;
+    if (/\b(fan|fläkt|flakt|purifier|dehumidifier)\b/i.test(`${id.replace(/_/g, ' ')} ${a.friendly_name || ''}`)) r += 6;
+    return r;
+  };
+  const climates = (entitiesByArea(hass).get(areaId) || []).filter((id) => domainOf(id) === 'climate');
+  climates.sort((x, y) => rank(x) - rank(y));
+  return climates[0] || null;
 }
 
 // A setpoint as the gauge and its buttons need it: what it is set to, what it
@@ -63,6 +76,8 @@ export function heatControl(hass, id, reading = null) {
     // Degrees show as ° whatever the scale, as a thermostat's do.
     unit: d === 'number' || d === 'input_number' ? (/^°/.test(a.unit_of_measurement || '') ? '°' : (a.unit_of_measurement || '')) : '°',
     mode: st.state, action,
+    // A boiler's thermostat (by name or room) asks before its setting moves.
+    asks: looksImportant(hass, id, { anyDomain: true }),
     heating: action === 'heating' || (d === 'climate' && st.state === 'heat' && current !== null && current < target),
     down: set(clamp(target - step)), up: set(clamp(target + step)),
   };

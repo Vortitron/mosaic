@@ -82,3 +82,21 @@ test('the gauge shows the part of the range that matters', () => {
   assert.match(svg, />21°</);
   assert.ok(!svg.includes('<Office>'), 'labels are escaped');
 });
+
+test("a room's heating is the thermostat that heats it, and a boiler asks first", () => {
+  const hass = makeFakeHass();
+  const area = 'living_room';
+  const add = (id, state, attrs) => {
+    hass.states[id] = { entity_id: id, state, attributes: attrs };
+    hass.entities[id] = { entity_id: id, area_id: area };
+  };
+  add('climate.circulation_fan', 'off', { friendly_name: 'Circulation Fan', temperature: 21, hvac_modes: ['off', 'fan_only'] });
+  add('climate.sam', 'heat', { friendly_name: 'Sam', temperature: 22, current_temperature: 22, hvac_modes: ['off', 'heat'] });
+  hass.states = { ...hass.states };
+  assert.equal(heatingOf(hass, area), 'climate.sam');
+  assert.equal(heatControl(hass, 'climate.sam').asks, false, 'a heat pump is just heating');
+  add('climate.boiler_relay_1_thermostat', 'off', { friendly_name: 'BoilerControl Boiler Relay 1 Thermostat', temperature: 3, min_temp: 1, max_temp: 25 });
+  assert.equal(heatControl(hass, 'climate.boiler_relay_1_thermostat').asks, true);
+  add('climate.bio_office_heat', 'off', { friendly_name: 'Bio Office Heaters', temperature: 10 });
+  assert.equal(heatControl(hass, 'climate.bio_office_heat').asks, false, 'heaters are what a thermostat is for');
+});
