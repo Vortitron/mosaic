@@ -40,6 +40,9 @@ export function makeFakeHass(onUpdate, { agent = 'anthropic' } = {}) {
   add('switch.server_rack', 'on', { friendly_name: 'Server Rack' }, 'comms');
   add('switch.monitor', 'on', { friendly_name: 'Monitor' }, 'office');
   add('sensor.kitchen_temperature', '21.4', { friendly_name: 'Kitchen Temperature', device_class: 'temperature', unit_of_measurement: '°C' }, 'kitchen');
+  add('input_number.office_setpoint', '19.5', { friendly_name: 'Office Setpoint', min: 10, max: 25, step: 0.5, unit_of_measurement: '°C' }, 'office');
+  add('number.desk_lamp_fade', '30', { friendly_name: 'Desk Lamp Fade', min: 0, max: 120, step: 1, unit_of_measurement: 's' }, 'office');
+  add('sensor.phone_battery', '64', { friendly_name: 'Phone Battery', device_class: 'battery', unit_of_measurement: '%' }, 'living_room');
   add('sensor.kitchen_humidity', '48', { friendly_name: 'Kitchen Humidity', device_class: 'humidity', unit_of_measurement: '%' }, 'kitchen');
   add('sensor.bedroom_temperature', '18.9', { friendly_name: 'Bedroom Temperature', device_class: 'temperature', unit_of_measurement: '°C' }, 'bedroom');
   add('sensor.office_co2', '812', { friendly_name: 'Office CO2', device_class: 'carbon_dioxide', unit_of_measurement: 'ppm' }, 'office');

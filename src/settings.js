@@ -10,7 +10,8 @@ import {
   ATTENTION_SECTIONS, NEW_HELPERS, attention, deviceLabel, deviceRows, entitiesOfDevice, helperCreateMessage,
   integrationName, integrationRows, roomsByFloor,
 } from './manage-model.js';
-import { guessAreaIcon, letterOf, langOf } from './model.js';
+import { entitiesByArea, guessAreaIcon, letterOf, langOf, nameOf } from './model.js';
+import { HEAT_DOMAINS, heatingOf } from './backs.js';
 
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
 const icon = (mdi, cls = '') => `<span class="ricon ${cls}"><ha-icon icon="${esc(mdi)}"></ha-icon></span>`;
@@ -338,6 +339,22 @@ export const settingsMethods = {
       if (e.type === 'change' && t.classList.contains('fname')) {
         await hass.callWS({ type: 'config/device_registry/update', device_id: t.dataset.device, name_by_user: t.value.trim() || null });
         this._toast(t.value.trim() ? 'Renamed' : 'Back to its own name');
+        return true;
+      }
+      if (e.type === 'change' && t.classList.contains('aheat')) {
+        const rooms = { ...(this._config.rooms || {}) };
+        const room = { ...(rooms[t.dataset.area] || {}) };
+        if (t.value) room.heating = t.value;
+        else delete room.heating;
+        if (Object.keys(room).length) rooms[t.dataset.area] = room;
+        else delete rooms[t.dataset.area];
+        if (await this._saveConfig({ rooms: Object.keys(rooms).length ? rooms : null })) this._toast(t.value ? 'The room tile turns over to it' : 'Back to automatic');
+        return true;
+      }
+      if (e.type === 'change' && (t.classList.contains('atemp') || t.classList.contains('ahum'))) {
+        const key = t.classList.contains('atemp') ? 'temperature_entity_id' : 'humidity_entity_id';
+        await hass.callWS({ type: 'config/area_registry/update', area_id: t.dataset.area, [key]: t.value || null });
+        this._toast('Saved');
         return true;
       }
       if (e.type === 'change' && (t.classList.contains('aname') || t.classList.contains('afloor') || t.classList.contains('aicon'))) {
@@ -692,6 +709,36 @@ export const settingsMethods = {
     div.querySelector('input').focus();
   },
 
+  // What warms the room and what measures it. Heating is Mosaic's own choice
+  // (the room tile turns over to it); the sensors are Home Assistant's, on the
+  // area, so its own pages use them too. The room's own things come first.
+  _roomClimateFields(areaId, a) {
+    const hass = this._hass;
+    const mine = new Set(entitiesByArea(hass).get(areaId) || []);
+    const order = (ids) => [...ids].sort((x, y) => (mine.has(y) - mine.has(x)) || nameOf(hass, x).localeCompare(nameOf(hass, y)));
+    const option = (id, chosen) => `<option value="${esc(id)}" ${id === chosen ? 'selected' : ''}>${esc(nameOf(hass, id))}${mine.has(id) ? '' : ` (${esc(this._roomName(id))})`}</option>`;
+    const all = Object.keys(hass.states);
+    const isTempNumber = (id) => ['number', 'input_number'].includes(id.split('.')[0])
+      && (/°|temp/i.test(`${hass.states[id].attributes.unit_of_measurement || ''} ${hass.states[id].attributes.device_class || ''}`) || mine.has(id));
+    const heaters = order(all.filter((id) => ['climate', 'water_heater'].includes(id.split('.')[0]) || isTempNumber(id)).filter((id) => HEAT_DOMAINS.includes(id.split('.')[0])));
+    const rooms = this._config.rooms || {};
+    const chosen = (rooms[areaId] && rooms[areaId].heating) || '';
+    const auto = heatingOf(hass, areaId, null);
+    const sensors = (dc) => order(all.filter((id) => id.startsWith('sensor.') && hass.states[id].attributes.device_class === dc));
+    const editable = this._canEdit();
+    return `<label class="field"><span>heating: what the room tile turns over to</span><select class="aheat" data-area="${esc(areaId)}" ${editable ? '' : 'disabled'}><option value="">${auto ? `automatic (${esc(nameOf(hass, auto))})` : 'none'}</option>${heaters.map((id) => option(id, chosen)).join('')}</select></label>
+      <label class="field"><span>temperature from</span><select class="atemp" data-area="${esc(areaId)}"><option value="">automatic</option>${sensors('temperature').map((id) => option(id, a.temperature_entity_id)).join('')}</select></label>
+      <label class="field"><span>humidity from</span><select class="ahum" data-area="${esc(areaId)}"><option value="">automatic</option>${sensors('humidity').map((id) => option(id, a.humidity_entity_id)).join('')}</select></label>`;
+  },
+
+  _roomName(entityId) {
+    const hass = this._hass;
+    const e = hass.entities && hass.entities[entityId];
+    const d = e && e.device_id && hass.devices && hass.devices[e.device_id];
+    const areaId = (e && e.area_id) || (d && d.area_id);
+    return (areaId && hass.areas[areaId] && hass.areas[areaId].name) || 'no room';
+  },
+
   _roomSettingsHtml(areaId) {
     const store = this._store && this._store.data;
     if (!store || !store.ready) return '<div class="dots" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></div><div class="waiting">reading your home…</div>';
@@ -701,6 +748,7 @@ export const settingsMethods = {
     return `<label class="field"><span>name</span><input class="aname" data-area="${esc(areaId)}" value="${esc(a.name)}"></label>
       <label class="field"><span>floor</span><select class="afloor" data-area="${esc(areaId)}"><option value="">no floor</option>${floors.map((f) => `<option value="${esc(f.floor_id)}" ${f.floor_id === a.floor_id ? 'selected' : ''}>${esc(f.name)}</option>`).join('')}</select></label>
       <label class="field"><span>icon (an mdi: name)</span><input class="aicon" data-area="${esc(areaId)}" value="${esc(a.icon || '')}" placeholder="mdi:sofa"></label>
+      ${this._roomClimateFields(areaId, a)}
       <div class="links"><button class="link" data-allrooms="${esc(areaId)}">all rooms</button><button class="link" data-nav="/config/areas/area/${esc(areaId)}">open in Home Assistant</button></div>`;
   },
 };

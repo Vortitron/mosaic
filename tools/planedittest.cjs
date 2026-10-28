@@ -12,10 +12,13 @@ const SP = process.env.SP || '/tmp';
   await page.goto(URL);
   await page.waitForFunction(() => window.booted);
   await page.waitForTimeout(2300);
-  const sketch = await page.evaluate(() => ({ sketch: window.card._planIsSketch, rooms: window.card._plan && window.card._plan.rooms.length, header: window.card.shadowRoot.querySelector('.planart h2').textContent, link: window.card.shadowRoot.querySelector('[data-planedit]').textContent }));
+  // The plan is the house tab's (0.7.0 beta 12 on).
+  await page.evaluate(() => window.card._goTab('house'));
+  await page.waitForTimeout(300);
+  const sketch = await page.evaluate(() => ({ sketch: window.card._planIsSketch, rooms: window.card._plan && window.card._plan.rooms.length, header: window.card.shadowRoot.querySelector('.housepage .housebar').textContent, link: window.card.shadowRoot.querySelector('[data-planedit]').textContent }));
   console.log('without a plan:', JSON.stringify(sketch));
   assert.equal(sketch.sketch, true);
-  await page.evaluate(() => window.card.shadowRoot.querySelector('.planart').scrollIntoView());
+  await page.evaluate(() => window.card.shadowRoot.querySelector('.housepage').scrollIntoView());
   await page.screenshot({ path: SP + '/pe-sketch.png' });
   await page.evaluate(() => window.card.shadowRoot.querySelector('[data-planedit]').click());
   await page.waitForTimeout(500);

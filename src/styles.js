@@ -129,6 +129,8 @@ button { font: inherit; color: inherit; background: none; border: 0; padding: 0;
 .letter { display: flex; align-items: flex-end; width: 44px; height: 44px; padding: 0 0 4px 6px; margin: 14px 0 8px; border: 2px solid var(--accent); color: var(--fg); font-size: 22px; font-weight: 350; line-height: 1; }
 .row { display: flex; align-items: center; gap: 12px; padding: 6px 0; cursor: pointer; -webkit-tap-highlight-color: transparent; min-height: 52px; }
 .row:active { opacity: .7; }
+/* A number with a range: its row is a bar, filled as far as its value. */
+.row.ranged { background: linear-gradient(90deg, color-mix(in srgb, var(--accent) 30%, transparent) var(--pct), color-mix(in srgb, var(--fg) 5%, transparent) var(--pct)) 56px 0 / calc(100% - 56px) 100% no-repeat !important; }
 /* On a wide page the switch stays near its name: rows are no wider than a
    phone's, with a faint band to carry the eye across. */
 .ppage .row, .plist .row { max-width: 560px; }
@@ -315,6 +317,30 @@ button { font: inherit; color: inherit; background: none; border: 0; padding: 0;
 .bopen { opacity: .8; font-size: 14px; }
 .bsub { font-size: 12px; opacity: .85; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .bbody { flex: 1 1 auto; display: flex; flex-direction: column; justify-content: center; gap: 6px; min-height: 0; }
+/* A setpoint on a tile's back: the gauge, a step up and down beside it. On a
+   wide tile the switches sit to its right; on a large one, under it. */
+.bheat { display: flex; align-items: center; gap: 4px; flex: 1 1 auto; min-height: 0; }
+.bgauge { flex: 1 1 auto; min-width: 0; height: 100%; display: flex; align-items: center; justify-content: center; }
+.bgauge .gauge { width: 100%; height: 100%; max-height: calc(var(--unit) * 1.75); }
+.hsteps { display: flex; flex-direction: column; gap: 4px; }
+.hsteps button { width: calc(var(--unit) * 0.5); height: calc(var(--unit) * 0.5); border: 1px solid rgba(255,255,255,.6); color: #fff; font-size: 20px; line-height: 1; display: inline-flex; align-items: center; justify-content: center; }
+.hsteps button:active { background: rgba(255,255,255,.25); }
+.tile.wide .bbody:has(.bheat) { flex-direction: row; align-items: stretch; }
+.tile.wide .bbody:has(.bheat) .bheat { flex: 0 0 46%; }
+.tile.wide .bbody:has(.bheat) .chips { margin-top: 0; }
+.tile.large .bgauge .gauge { max-height: calc(var(--unit) * 2.4); }
+/* The gauge itself: thin, flat, in whatever colour it sits on. */
+.gauge { overflow: visible; }
+.gauge .gtrack { fill: none; stroke: currentColor; stroke-opacity: .28; stroke-width: 5; stroke-linecap: round; }
+.gauge .gfill { fill: none; stroke: currentColor; stroke-width: 5; stroke-linecap: round; }
+.gauge .gdot { fill: currentColor; }
+.gauge.heating .gfill, .gauge.heating .gdot { stroke: #ffb46b; fill: #ffb46b; }
+.gauge.heating .gfill { fill: none; }
+.gauge .gmark { stroke: currentColor; stroke-width: 3; stroke-linecap: round; }
+.gauge text { fill: currentColor; text-anchor: middle; dominant-baseline: central; }
+.gauge .gbig { font-size: 21px; font-weight: 300; }
+.gauge .gsmall { font-size: 11px; opacity: .9; }
+.gauge .gend { font-size: 7px; opacity: .6; }
 .chips { display: grid; grid-template-columns: repeat(auto-fill, minmax(calc(var(--unit) * 0.82), 1fr)); grid-auto-rows: 1fr; gap: 4px; flex: 1 1 auto; margin-top: 4px; min-height: 0; }
 .chip { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px; padding: 2px; border: 1px solid rgba(255,255,255,.45); color: #fff; min-height: 0; overflow: hidden; }
 .chip.on { background: rgba(255,255,255,.92); color: var(--accent); border-color: transparent; }

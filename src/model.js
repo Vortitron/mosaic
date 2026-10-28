@@ -37,6 +37,8 @@ const USEFUL = [
   'light', 'switch', 'fan', 'cover', 'lock', 'climate', 'media_player', 'vacuum', 'lawn_mower',
   'scene', 'script', 'button', 'input_button', 'input_boolean', 'sensor', 'binary_sensor', 'camera',
   'weather', 'person', 'humidifier', 'water_heater', 'alarm_control_panel', 'valve', 'calendar', 'todo',
+  // Numbers you set (a setpoint, a fade time); config ones stay out (entity_category).
+  'number', 'input_number',
 ];
 
 // The pivots inside a room, in order.
@@ -142,6 +144,8 @@ export function pivotOf(hass, id) {
   const d = domainOf(id);
   const dc = hass.states[id] && hass.states[id].attributes.device_class;
   if (d === 'sensor' && CLIMATE_CLASSES.includes(dc)) return 'climate';
+  // A number in degrees is a setpoint: it belongs with the room's heating.
+  if ((d === 'number' || d === 'input_number') && /°/.test((hass.states[id] && hass.states[id].attributes.unit_of_measurement) || '')) return 'climate';
   if (d === 'binary_sensor' && SECURITY_CLASSES.includes(dc)) return 'security';
   const p = PIVOTS.find(([, ds]) => ds.includes(d));
   return p ? p[0] : 'other';

@@ -14,6 +14,8 @@ A live-tile Start screen for Home Assistant, after Windows Phone 10.
 
 - **Live tiles:** small, medium, wide and large tiles in one accent colour. They flip or peek between faces: a room turns over to its temperature or what's playing, the date to your next event, a camera tile shows its picture.
 - **Tiles turn over:** tap a tile and it flips to its controls: a lamp's switch and brightness, a room's lights and plugs, play/pause and volume, a thermostat's setpoint, a blind's open/stop/close. Tap the face again to go in. (`tap: act` brings back one-tap toggling.)
+- **Heating on the back:** a room you can heat turns over to a gauge: what it is set to, large, with the room's temperature on the arc, and a step warmer or cooler beside it (quick taps add up and go as one change). It uses a thermostat in the room, or whatever you pick on the room's settings page (a water heater, or a setpoint helper an automation heats to); the same page picks which sensors give the room's temperature and humidity. A thermostat's own tile turns over to the same gauge.
+- **Numbers read as bars:** in the A–Z list, a number with a range (a setpoint, a fade time, a battery or humidity in %) shades its row as far as its value.
 - **Rooms are apps:** tap a room tile for a full-screen room with pivots (lights, power, climate, media, security...) that you swipe between. Tapping a name opens Home Assistant's own dialog.
 - **The A–Z list:** swipe left (on a desktop it sits beside the tiles) for everything in the house, with search and a letter jump list. It lists **devices** (a smart plug is one row, not five sensors; tap it to open it like a room) or every **entity**: switch at the top, and each viewer's choice is remembered.
 - **An assistant where Cortana was:** a tile and the search box talk to your home's Assist agent. If that agent is Claude (the Anthropic integration), the tile says Claude. When the Assist pipeline has speech-to-text there is a microphone too, and with text-to-speech, spoken questions get spoken answers. It all goes through Home Assistant's own pipeline (Whisper, Home Assistant Cloud, whatever you set up there), never a browser speech service.
@@ -64,6 +66,9 @@ assistant:              # false hides the assistant
   speak: true                    # spoken answers to spoken questions
 tap: flip               # flip: a tap shows the controls on the back | act: a tap toggles or opens
 tile_style: soft        # soft (a gentle wash) | flat (solid accent, the old look)
+rooms:                  # per room (set from the room's settings page)
+  office:
+    heating: input_number.office_setpoint   # what the room tile turns over to
 settings: true          # false hides the settings tab and tile (they are only ever shown to admins)
 brand_icons: true       # false: integrations get a letter instead of their logo from brands.home-assistant.io
 show_plan: true         # false: no house tab

@@ -43,8 +43,9 @@ import { backOf } from './backs.js';
 import { artMethods } from './art.js';
 import { planEditMethods } from './plan-edit.js';
 import { locate } from './locator.js';
+import { gaugeSvg } from './gauge.js';
 
-const VERSION = '0.7.0-beta.13';
+const VERSION = '0.7.0-beta.14';
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
 const reduced = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
 const ON = ['on', 'open', 'opening', 'unlocked', 'playing', 'home', 'heat', 'cool', 'heat_cool', 'auto', 'cleaning'];
@@ -71,6 +72,29 @@ function faceHtml(f) {
     default:
       return '<div class="face"></div>';
   }
+}
+
+// A number with a range shades its row like a bar filled to its value: a
+// number or input_number between its min and max, or a percentage (a battery,
+// humidity). Returns the class and style to add to the row, or ''.
+function rangeStyle(st) {
+  if (!st) return '';
+  const v = Number(st.state);
+  if (st.state === '' || st.state === null || !Number.isFinite(v)) return '';
+  const a = st.attributes || {};
+  const d = st.entity_id.split('.')[0];
+  let lo;
+  let hi;
+  if ((d === 'number' || d === 'input_number') && Number.isFinite(Number(a.min)) && Number.isFinite(Number(a.max))) {
+    lo = Number(a.min);
+    hi = Number(a.max);
+  } else if (d === 'sensor' && a.unit_of_measurement === '%') {
+    lo = 0;
+    hi = 100;
+  } else return '';
+  if (!(hi > lo)) return '';
+  const pct = Math.round(Math.min(1, Math.max(0, (v - lo) / (hi - lo))) * 1000) / 10;
+  return ` ranged" style="--pct:${pct}%`;
 }
 
 // Bring a live list row from oldHtml to newHtml by changing only what changed:
@@ -559,7 +583,7 @@ class MosaicStart extends HTMLElement {
     this._refreshPlans();
     for (const t of this._tiles.values()) {
       if (!t.flipped) continue;
-      const back = backOf(this._hass, t.spec, t.model);
+      const back = backOf(this._hass, t.spec, t.model, { rooms: this._config.rooms });
       if (back) {
         t.back = back;
         this._paintBack(t);
@@ -709,7 +733,10 @@ class MosaicStart extends HTMLElement {
     let dragging = false;
     let last = null;
     let scroller = null;
-    const tileOf = (e) => e.target.closest && e.target.closest('.tile');
+    // By the event's path, fixed when it fired: a control that redraws the
+    // back it sits on (a setpoint step) is detached by the time the next
+    // listener asks, and "not in a tile" turned the tile back over.
+    const tileOf = (e) => (e.composedPath ? e.composedPath() : [e.target]).find((n) => n.classList && n.classList.contains('tile')) || null;
     // Dragging near the top or bottom of Start scrolls it, so a tile can go
     // to a group that is off screen.
     const autoscroll = () => {
@@ -817,7 +844,7 @@ class MosaicStart extends HTMLElement {
   _tap(t) {
     if (!t || !t.model) return;
     if (this._config.tap !== 'act') {
-      const back = backOf(this._hass, t.spec, t.model);
+      const back = backOf(this._hass, t.spec, t.model, { rooms: this._config.rooms });
       if (back) return this._flip(t, back);
     }
     const a = t.model.tap;
@@ -1141,10 +1168,18 @@ class MosaicStart extends HTMLElement {
     }
     const iconFor = (c) => (c.entity ? `<ha-state-icon data-entity="${esc(c.entity)}"></ha-state-icon>` : `<ha-icon icon="${esc(c.icon)}"></ha-icon>`);
     let body = '';
+    const heat = b.heat ? this._heatShown(b.heat) : null;
+    if (heat) {
+      // Under the setting: what the room reads, or a thermostat's mode; a
+      // plain number has neither (its state is the setting itself).
+      const small = heat.current !== null ? `${heat.current}${heat.unit} now` : /^(climate|water_heater)\./.test(heat.entity) ? heat.mode : '';
+      body += `<div class="bheat"><div class="bgauge">${gaugeSvg({ value: heat.current, target: heat.target, min: heat.min, max: heat.max, big: `${heat.target}${heat.unit}`, small, state: heat.heating ? 'heating' : '', label: `${b.title}: set to ${heat.target}${heat.unit}` })}</div>`
+        + `<div class="hsteps"><button data-back="h:up" aria-label="warmer">+</button><button data-back="h:down" aria-label="cooler">&minus;</button></div></div>`;
+    }
     if (b.kind === 'room') {
-      body = `<div class="chips">${b.chips.map((c, i) => `<button class="chip ${c.on ? 'on' : ''}" data-back="c:${i}" aria-label="${esc(c.label)}" aria-pressed="${!!c.on}">${iconFor(c)}<span>${esc(c.label)}</span></button>`).join('')}</div>`;
+      body += `<div class="chips">${b.chips.map((c, i) => `<button class="chip ${c.on ? 'on' : ''}" data-back="c:${i}" aria-label="${esc(c.label)}" aria-pressed="${!!c.on}">${iconFor(c)}<span>${esc(c.label)}</span></button>`).join('')}</div>`;
     } else {
-      body = b.controls.map((c, i) => {
+      body += b.controls.map((c, i) => {
         if (c.kind === 'switch') return `<button class="toggle ${c.on ? 'on' : ''}" role="switch" aria-checked="${c.on}" aria-label="${esc(b.title)}" data-back="k:${i}"></button>`;
         if (c.kind === 'step') return `<div class="bstep"><button data-back="k:${i}:down" aria-label="less">&minus;</button><span>${esc(c.label)}</span><button data-back="k:${i}:up" aria-label="more">+</button></div>`;
         return `<div class="bbtns">${c.buttons.map((x, j) => `<button class="${x.on ? 'on' : ''}" data-back="k:${i}:${j}" aria-label="${esc(x.label)}"><ha-icon icon="${esc(x.icon)}"></ha-icon></button>`).join('')}</div>`;
@@ -1172,6 +1207,7 @@ class MosaicStart extends HTMLElement {
       return this._moreInfo(b.open.entity);
     }
     const [kind, i, j] = hit.dataset.back.split(':');
+    if (kind === 'h') return this._stepHeat(t, i === 'up' ? 1 : -1);
     if (kind === 'c') {
       const c = b.chips[Number(i)];
       if (c.kind === 'more') {
@@ -1186,6 +1222,37 @@ class MosaicStart extends HTMLElement {
     if (c.kind === 'step') return this._call(j === 'down' ? c.down : c.up);
     const x = c.buttons[Number(j)];
     return call(x.call, x.asks, `${x.label} ${b.title}`);
+  }
+
+  // A setpoint being changed: shown at once, sent once the taps stop, so five
+  // quick taps are five steps and one call (not five calls from a stale value).
+  _heatShown(heat) {
+    const p = this._pendingHeat && this._pendingHeat.get(heat.entity);
+    if (!p) return heat;
+    // Home Assistant has caught up, or gave up: show what it says again.
+    if (p.target === heat.target || Date.now() - p.at > 8000) {
+      this._pendingHeat.delete(heat.entity);
+      return heat;
+    }
+    return { ...heat, target: p.target };
+  }
+
+  _stepHeat(t, dir) {
+    const heat = t.back && t.back.heat;
+    if (!heat) return;
+    this._pendingHeat = this._pendingHeat || new Map();
+    const shown = this._heatShown(heat);
+    const target = +Math.min(heat.max, Math.max(heat.min, shown.target + dir * heat.step)).toFixed(2);
+    const p = { target, at: Date.now(), timer: null };
+    const prev = this._pendingHeat.get(heat.entity);
+    if (prev) clearTimeout(prev.timer);
+    p.timer = setTimeout(() => {
+      const [domain, service, data] = heat.up;
+      const key = Object.keys(data).find((k) => k !== 'entity_id');
+      this._call([domain, service, { ...data, [key]: target }]);
+    }, 550);
+    this._pendingHeat.set(heat.entity, p);
+    this._paintBack(t);
   }
 
   // --- overlays --------------------------------------------------------------
@@ -1387,10 +1454,10 @@ class MosaicStart extends HTMLElement {
       const action = tapAction(hass, r.id).action;
       const control = canToggle(hass, r.id) && action !== 'play_pause'
         ? `<button class="toggle ${off ? '' : 'on'}" role="switch" aria-checked="${!off}" aria-label="${esc(r.name)}" data-act="${action}" data-entity="${esc(r.id)}"></button>` : '';
-      return `<div class="row" data-device="${esc(r.device)}"><span class="ricon ${off}"><ha-state-icon data-entity="${esc(r.id)}"></ha-state-icon></span><span class="rname"><span>${esc(r.name)}</span><small>${esc(sub)}</small></span>${control}</div>`;
+      return `<div class="row${rangeStyle(st)}" data-device="${esc(r.device)}"><span class="ricon ${off}"><ha-state-icon data-entity="${esc(r.id)}"></ha-state-icon></span><span class="rname"><span>${esc(r.name)}</span><small>${esc(sub)}</small></span>${control}</div>`;
     }
     const sub = [r.area, stateText(hass, r.id)].filter(Boolean).join(' · ');
-    return `<div class="row" data-entity="${esc(r.id)}"><span class="ricon ${off}"><ha-state-icon data-entity="${esc(r.id)}"></ha-state-icon></span><span class="rname"><span>${esc(r.name)}</span><small>${esc(sub)}</small></span></div>`;
+    return `<div class="row${rangeStyle(st)}" data-entity="${esc(r.id)}"><span class="ricon ${off}"><ha-state-icon data-entity="${esc(r.id)}"></ha-state-icon></span><span class="rname"><span>${esc(r.name)}</span><small>${esc(sub)}</small></span></div>`;
   }
 
   // Rows are keyed, so a sensor ticking over repaints its own row and nothing
