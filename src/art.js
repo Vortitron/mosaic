@@ -63,7 +63,12 @@ export const artMethods = {
         this._planIsSketch = true;
       }
     }
-    if (!plan) return;
+    this._planLoaded = true;
+    if (!plan) {
+      this._fillHub();
+      if (this._tab === 'house') this._goTab('start');
+      return;
+    }
     this._plan = plan;
     this._planSig = null;
     this._fillHub();
@@ -182,7 +187,8 @@ export const artMethods = {
     const pane = this.shadowRoot.querySelector('.tabpane.house');
     if (!pane) return;
     if (!this._plan) {
-      pane.innerHTML = '';
+      // Still on its way (it loads just after the first paint).
+      pane.innerHTML = '<div class="housepage"><div class="dots" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></div></div>';
       return;
     }
     // A tilted house is wide: on a tall screen (a phone) the floors go flat,

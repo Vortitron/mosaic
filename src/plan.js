@@ -130,19 +130,20 @@ function levelParts(level, hass, entitiesByArea, { highlight = null, labels = tr
     const say = lights ? (s.lit ? `, ${s.lit} light${s.lit === 1 ? '' : 's'} on` : '') : value !== null ? `, ${value}${mode === 'temperature' ? '°' : '%'}` : '';
     const attrs = area ? ` data-area="${esc(area.area_id)}" role="button" tabindex="0" aria-label="${esc(area.name)}${say}"` : '';
     shapes.push(`<g class="${cls}"${attrs}${fill ? ` style="--fill:${fill}"` : ''}>${r.rects.map((q) => rect(q)).join('')}</g>`);
-    if (!labels || r.outdoor) continue;
+    if (!labels) continue;
     // The name goes in the room's biggest rectangle, sized to fit it.
     const big = [...r.rects].sort((p, q) => Math.abs((q[2] - q[0]) * (q[3] - q[1])) - Math.abs((p[2] - p[0]) * (p[3] - p[1])))[0];
     const w = Math.abs(big[2] - big[0]);
     const h = Math.abs(big[3] - big[1]);
     const name = (area && area.name) || r.name || r.id;
     const on = (lights && s.lit) || value !== null || isHere || busy;
-    const size = Math.max(0.28, Math.min(0.75, h * 0.3, (w * 1.6) / Math.max(4, name.length)));
+    // Outside (a garden wrapping the house): a smaller, quieter name.
+    const size = Math.max(0.28, Math.min(r.outdoor ? 0.5 : 0.75, h * 0.3, (w * 1.6) / Math.max(4, name.length)));
     const reading = value === null ? null : `${Math.round(value * 10) / 10}${mode === 'temperature' ? '°' : '%'}`;
     const rsize = reading ? Math.max(0.36, Math.min(1.1, h * 0.38, (w * 1.7) / Math.max(3, reading.length))) : 0;
     // With people on the plan, a room's name goes to the bottom of the room, out of their way.
     const low = mode === 'people';
-    marks.push({ x: Math.min(big[0], big[2]) + w / 2, y: low ? Math.max(big[1], big[3]) - size * 0.9 : Math.min(big[1], big[3]) + h / 2, name, on, size, reading, rsize });
+    marks.push({ x: Math.min(big[0], big[2]) + w / 2, y: low ? Math.max(big[1], big[3]) - size * 0.9 : Math.min(big[1], big[3]) + h / 2, name, on, size, reading, rsize, out: !!r.outdoor && !on });
   }
   // Markers keep to a size you can see on a big house as well as a small one.
   const grow = Math.max(1, bbox(level.rooms).w / 11);
@@ -173,14 +174,17 @@ function markText(m, x, y, scale = 1) {
     const shape = m.kind === 'person' || m.kind === 'someone'
       ? `<circle cx="${cx}" cy="${cy}" r="${r.toFixed(2)}"/>${face}`
       : `<rect x="${(x - r * 0.6).toFixed(2)}" y="${(y - r * 0.6).toFixed(2)}" width="${(r * 1.2).toFixed(2)}" height="${(r * 1.2).toFixed(2)}" transform="rotate(45 ${x.toFixed(2)} ${y.toFixed(2)})"/>`;
-    return `<g class="who ${m.kind}${m.find ? ' found' : ''}"${m.area ? ` data-area="${esc(m.area)}"` : ''}>${shape}${m.kind === 'someone' ? '' : `<text class="whoname" x="${x.toFixed(2)}" y="${(y + r + 0.32 * scale).toFixed(2)}" font-size="${(0.34 * scale).toFixed(2)}">${esc(m.name)}</text>`}</g>`;
+    // A person's name under them; a thing's above it, clear of the room's
+    // name, which the people view puts at the bottom of the room.
+    const nameY = m.kind === 'thing' ? y - r - 0.24 * scale : y + r + 0.32 * scale;
+    return `<g class="who ${m.kind}${m.find ? ' found' : ''}"${m.area ? ` data-area="${esc(m.area)}"` : ''}>${shape}${m.kind === 'someone' ? '' : `<text class="whoname" x="${x.toFixed(2)}" y="${nameY.toFixed(2)}" font-size="${(0.34 * scale).toFixed(2)}">${esc(m.name)}</text>`}</g>`;
   }
   const size = m.size * scale;
   if (m.reading) {
     const rs = m.rsize * scale;
     return `<text class="on value" x="${x.toFixed(2)}" y="${(y - size * 0.45).toFixed(2)}" font-size="${rs.toFixed(2)}">${esc(m.reading)}</text><text class="on" x="${x.toFixed(2)}" y="${(y + rs * 0.55).toFixed(2)}" font-size="${(size * 0.8).toFixed(2)}">${esc(m.name)}</text>`;
   }
-  return `<text class="${m.on ? 'on' : ''}" x="${x.toFixed(2)}" y="${y.toFixed(2)}" font-size="${size.toFixed(2)}">${esc(m.name)}</text>`;
+  return `<text class="${m.on ? 'on' : m.out ? 'outside' : ''}" x="${x.toFixed(2)}" y="${y.toFixed(2)}" font-size="${size.toFixed(2)}">${esc(m.name)}</text>`;
 }
 
 // One storey as SVG, flat. highlight: an area id to pick out (a room's own page).

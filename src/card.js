@@ -45,7 +45,7 @@ import { planEditMethods } from './plan-edit.js';
 import { locate } from './locator.js';
 import { gaugeSvg } from './gauge.js';
 
-const VERSION = '0.7.0-beta.16';
+const VERSION = '0.7.0-beta.17';
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
 const reduced = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
 const ON = ['on', 'open', 'opening', 'unlocked', 'playing', 'home', 'heat', 'cool', 'heat_cool', 'auto', 'cleaning'];
@@ -344,7 +344,10 @@ class MosaicStart extends HTMLElement {
 
   _tabs() {
     const tabs = ['start'];
-    if (this._plan && this._config.show_plan !== false) tabs.push('house');
+    // The plan loads just after the first paint; until then a home with rooms
+    // will have at least a sketch, so the tab is there from the start.
+    const planComing = !this._planLoaded && this._hass && Object.keys(this._hass.areas || {}).length > 0;
+    if ((this._plan || planComing) && this._config.show_plan !== false) tabs.push('house');
     if (this._canManage()) tabs.push('settings');
     return tabs;
   }
@@ -368,6 +371,7 @@ class MosaicStart extends HTMLElement {
   _goTab(tab, pivot) {
     const root = this.shadowRoot;
     if (this._edit && tab !== 'start') return;
+    if (tab !== 'start' && !this._tabs().includes(tab)) return;
     const again = this._tab === tab;
     this._tab = tab;
     for (const p of root.querySelectorAll('.tabpane')) p.classList.toggle('on', p.classList.contains(tab));

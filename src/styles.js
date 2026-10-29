@@ -237,6 +237,7 @@ button { font: inherit; color: inherit; background: none; border: 0; padding: 0;
 .plan .room.here.dim, .plan .room.here { opacity: 1; }
 .plan .room.known:hover rect, .plan .room.known:focus rect { fill: color-mix(in srgb, var(--accent) 70%, var(--fg)); }
 .plan text.on { fill: #fff; stroke: rgba(0,0,0,.25); }
+.plan text.outside { fill: var(--fg2); font-style: italic; }
 .rooms .ppage > .liveplan { max-width: 640px; margin-bottom: 8px; }
 .rooms .ppage > .liveplan svg { max-height: 46vh; }
 .plan text { fill: var(--fg); text-anchor: middle; dominant-baseline: central; font-weight: 400; pointer-events: none; paint-order: stroke; stroke: var(--bg); stroke-width: .05; }
