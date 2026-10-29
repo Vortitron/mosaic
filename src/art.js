@@ -114,7 +114,11 @@ export const artMethods = {
     if (this._planMode() !== 'people' || !this._plan) return [];
     if (this._whoAt === this._hass.states) return this._whoList;
     this._whoMem = this._whoMem || new Map();
-    this._whoList = locate(this._hass, this._plan, this._whoMem).map((w) => ({ ...w, init: initials(w.name), find: this._findArea === w.areaId }));
+    const pictureOf = (person) => {
+      const st = person && this._hass.states[person];
+      return (st && st.attributes.entity_picture) || null;
+    };
+    this._whoList = locate(this._hass, this._plan, this._whoMem).map((w) => ({ ...w, init: initials(w.name), find: this._findArea === w.areaId, picture: w.kind === 'person' ? pictureOf(w.person) : null }));
     this._whoAt = this._hass.states;
     return this._whoList;
   },

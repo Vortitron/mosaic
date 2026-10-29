@@ -30,7 +30,7 @@
 import { CSS as STYLES } from './styles.js';
 import { installFonts } from './fonts.js';
 import {
-  ACCENTS, accentColour, allList, alphabet, langOf, autoGroups, canToggle, deviceList, deviceName, domainOf, entitiesByArea,
+  ACCENTS, accentColour, allList, alphabet, areaClimate, langOf, autoGroups, canToggle, deviceList, deviceName, domainOf, entitiesByArea,
   nameOf, pivotsFor, serviceFor, shortName, spanOf, stateText, tapAction, tileModel,
 } from './model.js';
 import { Conversation, agentName, resolveAgent } from './assistant.js';
@@ -39,13 +39,13 @@ import { VoiceRun, canListen } from './voice.js';
 import { ManageStore } from './manage-store.js';
 import { attention } from './manage-model.js';
 import { settingsMethods } from './settings.js';
-import { backOf } from './backs.js';
+import { HEAT_DOMAINS, backOf, heatControl, heatingOf } from './backs.js';
 import { artMethods } from './art.js';
 import { planEditMethods } from './plan-edit.js';
 import { locate } from './locator.js';
 import { gaugeSvg } from './gauge.js';
 
-const VERSION = '0.7.0-beta.15';
+const VERSION = '0.7.0-beta.16';
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
 const reduced = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
 const ON = ['on', 'open', 'opening', 'unlocked', 'playing', 'home', 'heat', 'cool', 'heat_cool', 'auto', 'cleaning'];
@@ -1168,14 +1168,7 @@ class MosaicStart extends HTMLElement {
     }
     const iconFor = (c) => (c.entity ? `<ha-state-icon data-entity="${esc(c.entity)}"></ha-state-icon>` : `<ha-icon icon="${esc(c.icon)}"></ha-icon>`);
     let body = '';
-    const heat = b.heat ? this._heatShown(b.heat) : null;
-    if (heat) {
-      // Under the setting: what the room reads, or a thermostat's mode; a
-      // plain number has neither (its state is the setting itself).
-      const small = heat.current !== null ? `${heat.current}${heat.unit} now` : /^(climate|water_heater)\./.test(heat.entity) ? heat.mode : '';
-      body += `<div class="bheat"><div class="bgauge">${gaugeSvg({ value: heat.current, target: heat.target, min: heat.min, max: heat.max, big: `${heat.target}${heat.unit}`, small, state: heat.heating ? 'heating' : '', label: `${b.title}: set to ${heat.target}${heat.unit}` })}</div>`
-        + `<div class="hsteps"><button data-back="h:up" aria-label="warmer">+</button><button data-back="h:down" aria-label="cooler">&minus;</button></div></div>`;
-    }
+    if (b.heat) body += this._heatHtml(b.heat, b.title, 'data-back="h:up"', 'data-back="h:down"');
     if (b.kind === 'room') {
       body += `<div class="chips">${b.chips.map((c, i) => `<button class="chip ${c.on ? 'on' : ''}" data-back="c:${i}" aria-label="${esc(c.label)}" aria-pressed="${!!c.on}">${iconFor(c)}<span>${esc(c.label)}</span></button>`).join('')}</div>`;
     } else {
@@ -1224,6 +1217,37 @@ class MosaicStart extends HTMLElement {
     return call(x.call, x.asks, `${x.label} ${b.title}`);
   }
 
+  // A setpoint as a gauge with a step either side: on a tile's back and at the
+  // top of a room's climate pivot. up/down: the attribute each button carries.
+  _heatHtml(heatIn, title, up, down, cls = '') {
+    const heat = this._heatShown(heatIn);
+    // Under the setting: what the room reads, or a thermostat's mode; a
+    // plain number has neither (its state is the setting itself).
+    const small = heat.current !== null ? `${heat.current}${heat.unit} now` : /^(climate|water_heater)\./.test(heat.entity) ? heat.mode : '';
+    return `<div class="bheat${cls ? ` ${cls}` : ''}"><div class="bgauge">${gaugeSvg({ value: heat.current, target: heat.target, min: heat.min, max: heat.max, big: `${heat.target}${heat.unit}`, small, state: heat.heating ? 'heating' : '', label: `${title}: set to ${heat.target}${heat.unit}` })}</div>`
+      + `<div class="hsteps"><button ${up} aria-label="warmer">+</button><button ${down} aria-label="cooler">&minus;</button></div></div>`;
+  }
+
+  // The heating a room (or a device) app shows at the top of its climate pivot.
+  _appHeat(o, parts) {
+    const hass = this._hass;
+    let id = null;
+    let reading = null;
+    if (o.kind === 'room') {
+      id = heatingOf(hass, o.area, this._config.rooms);
+      const area = hass.areas && hass.areas[o.area];
+      reading = area ? areaClimate(hass, area).temp : null;
+    } else id = parts.ids.find((x) => HEAT_DOMAINS.includes(domainOf(x)));
+    return id ? heatControl(hass, id, reading) : null;
+  }
+
+  // The app's pivots; a room with heating always has a climate one for it.
+  _appPivots(o, parts) {
+    const pivots = pivotsFor(this._hass, parts.ids);
+    if (this._appHeat(o, parts) && !pivots.some(([p]) => p === 'climate')) pivots.push(['climate', []]);
+    return pivots;
+  }
+
   // A setpoint being changed: shown at once, sent once the taps stop, so five
   // quick taps are five steps and one call (not five calls from a stale value).
   _heatShown(heat) {
@@ -1238,15 +1262,19 @@ class MosaicStart extends HTMLElement {
   }
 
   _stepHeat(t, dir) {
-    const heat = t.back && t.back.heat;
+    if (!t.back || !t.back.heat) return;
+    this._stepHeatOn(t.back.heat, t.back.title, () => this._paintBack(t), dir);
+  }
+
+  _stepHeatOn(heat, title, repaint, dir) {
     if (!heat) return;
     // Something that runs part of the house asks once, then steps freely
     // while you are at it.
     this._heatOk = this._heatOk || new Map();
     if (heat.asks && !(Date.now() - (this._heatOk.get(heat.entity) || 0) < 5 * 60000)) {
-      return this._ask({ title: `Change ${t.back.title}?`, text: `${nameOf(this._hass, heat.entity)} looks like it runs part of the house, so Mosaic asks before changing its setting.`, yes: 'change it', then: () => {
+      return this._ask({ title: `Change ${title}?`, text: `${nameOf(this._hass, heat.entity)} looks like it runs part of the house, so Mosaic asks before changing its setting.`, yes: 'change it', then: () => {
         this._heatOk.set(heat.entity, Date.now());
-        this._stepHeat(t, dir);
+        this._stepHeatOn(heat, title, repaint, dir);
       } });
     }
     this._pendingHeat = this._pendingHeat || new Map();
@@ -1261,7 +1289,7 @@ class MosaicStart extends HTMLElement {
       this._call([domain, service, { ...data, [key]: target }]);
     }, 550);
     this._pendingHeat.set(heat.entity, p);
-    this._paintBack(t);
+    repaint();
   }
 
   // --- overlays --------------------------------------------------------------
@@ -1333,7 +1361,7 @@ class MosaicStart extends HTMLElement {
       : prev && (prev.kind === 'settings' || prev.kind === 'integration') ? { ...prev, under: undefined, pivot: prev.kind === 'settings' ? 'devices' : prev.pivot }
       : null;
     this._overlay = { kind: spec.kind, area: spec.area, device: spec.device, under };
-    const pivots = pivotsFor(this._hass, parts.ids);
+    const pivots = this._appPivots(this._overlay, parts);
     if ((spec.kind === 'device' || spec.kind === 'room') && this._canManage()) {
       this._ensureStore();
       pivots.push(['settings', []]);
@@ -1378,7 +1406,8 @@ class MosaicStart extends HTMLElement {
     if (!o || !app) return;
     const parts = this._appParts(o);
     if (!parts) return;
-    const pivots = pivotsFor(this._hass, parts.ids);
+    const pivots = this._appPivots(o, parts);
+    const heat = this._appHeat(o, parts);
     for (const page of app.querySelectorAll('.ppage[data-pivot]')) {
       let html;
       if (page.dataset.pivot === 'settings') {
@@ -1387,7 +1416,8 @@ class MosaicStart extends HTMLElement {
         html = o.kind === 'room' ? this._roomSettingsHtml(o.area) : this._deviceSettingsHtml(o.device);
       } else {
         const ids = (pivots.find(([p]) => p === page.dataset.pivot) || [null, []])[1];
-        html = ids.map((id) => this._roomRow(id, parts.within)).join('');
+        html = (page.dataset.pivot === 'climate' && heat ? this._heatHtml(heat, parts.title, 'data-heatstep="up"', 'data-heatstep="down"', 'pheat') : '')
+          + ids.map((id) => this._roomRow(id, parts.within)).join('');
       }
       if (page.dataset.html === html) continue;
       page.dataset.html = html;
@@ -1414,6 +1444,13 @@ class MosaicStart extends HTMLElement {
   }
 
   _roomClick(e) {
+    const step = e.target.closest('[data-heatstep]');
+    if (step && this._overlay) {
+      const parts = this._appParts(this._overlay);
+      const heat = parts && this._appHeat(this._overlay, parts);
+      if (heat) this._stepHeatOn(heat, parts.title, () => this._renderApp(), step.dataset.heatstep === 'up' ? 1 : -1);
+      return;
+    }
     const row = e.target.closest('.row');
     if (!row) return;
     const id = row.dataset.entity;

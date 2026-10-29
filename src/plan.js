@@ -146,9 +146,13 @@ function levelParts(level, hass, entitiesByArea, { highlight = null, labels = tr
   }
   // Markers keep to a size you can see on a big house as well as a small one.
   const grow = Math.max(1, bbox(level.rooms).w / 11);
-  if (mode === 'people') for (const w of here) marks.push({ who: true, kind: w.kind, x: w.at[0], y: w.at[1], init: w.init, name: w.name, area: w.areaId, find: w.find, grow });
+  if (mode === 'people') for (const w of here) marks.push({ who: true, kind: w.kind, x: w.at[0], y: w.at[1], init: w.init, name: w.name, area: w.areaId, find: w.find, grow, picture: w.picture });
   return { shapes: shapes.join(''), marks };
 }
+
+// Each picture marker clips to its own circle: ids are per drawing, so two
+// plans of the same house on one page don't share (and misplace) a clip.
+let clipSeq = 0;
 
 // A label at a point: the reading big with the name under it, or the name.
 function markText(m, x, y, scale = 1) {
@@ -156,8 +160,18 @@ function markText(m, x, y, scale = 1) {
     // A person: a round marker with initials; a thing: a small diamond. The name under it.
     scale *= m.grow || 1;
     const r = 0.42 * scale;
+    const cx = x.toFixed(2);
+    const cy = y.toFixed(2);
+    let face = `<text class="init" x="${cx}" y="${cy}" font-size="${(r * 0.95).toFixed(2)}">${esc(m.kind === 'someone' ? '?' : m.init)}</text>`;
+    // Their picture, where Home Assistant has one, cut to the circle; the
+    // initials stay underneath for a picture that does not load.
+    if (m.kind === 'person' && m.picture) {
+      const id = `mpc${++clipSeq}`;
+      const inner = r * 0.86;
+      face += `<clipPath id="${id}"><circle cx="${cx}" cy="${cy}" r="${inner.toFixed(2)}"/></clipPath><image class="whopic" href="${esc(m.picture)}" x="${(x - inner).toFixed(2)}" y="${(y - inner).toFixed(2)}" width="${(inner * 2).toFixed(2)}" height="${(inner * 2).toFixed(2)}" preserveAspectRatio="xMidYMid slice" clip-path="url(#${id})"/>`;
+    }
     const shape = m.kind === 'person' || m.kind === 'someone'
-      ? `<circle cx="${x.toFixed(2)}" cy="${y.toFixed(2)}" r="${r.toFixed(2)}"/><text class="init" x="${x.toFixed(2)}" y="${y.toFixed(2)}" font-size="${(r * 0.95).toFixed(2)}">${esc(m.kind === 'someone' ? '?' : m.init)}</text>`
+      ? `<circle cx="${cx}" cy="${cy}" r="${r.toFixed(2)}"/>${face}`
       : `<rect x="${(x - r * 0.6).toFixed(2)}" y="${(y - r * 0.6).toFixed(2)}" width="${(r * 1.2).toFixed(2)}" height="${(r * 1.2).toFixed(2)}" transform="rotate(45 ${x.toFixed(2)} ${y.toFixed(2)})"/>`;
     return `<g class="who ${m.kind}${m.find ? ' found' : ''}"${m.area ? ` data-area="${esc(m.area)}"` : ''}>${shape}${m.kind === 'someone' ? '' : `<text class="whoname" x="${x.toFixed(2)}" y="${(y + r + 0.32 * scale).toFixed(2)}" font-size="${(0.34 * scale).toFixed(2)}">${esc(m.name)}</text>`}</g>`;
   }

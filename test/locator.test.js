@@ -79,7 +79,9 @@ import { tileModel } from '../src/model.js';
 test("a person's tile says which room they're in", () => {
   const hass = makeFakeHass();
   const rooms = new Map([['person.andy', 'Living Room']]);
-  assert.equal(tileModel(hass, { entity: 'person.andy' }, Date.now(), null, null, rooms).faces[0].sub, 'living room');
-  assert.equal(tileModel(hass, { entity: 'person.andy' }).faces[0].sub, 'home');
+  // A person with a picture shows it, the room as its caption; else initials over it.
+  const where = (m) => m.faces[0].sub ?? m.faces[0].cap;
+  assert.equal(where(tileModel(hass, { entity: 'person.andy' }, Date.now(), null, null, rooms)), 'living room');
+  assert.equal(where(tileModel(hass, { entity: 'person.andy' })), 'home');
   assert.equal(tileModel(hass, { entity: 'person.sam' }).faces[0].sub, 'away');
 });

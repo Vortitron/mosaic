@@ -58,7 +58,7 @@ export function makeFakeHass(onUpdate, { agent = 'anthropic' } = {}) {
   add('scene.movie', 'scening', { friendly_name: 'Movie Night' }, 'living_room');
   add('vacuum.robot', 'docked', { friendly_name: 'Robot Vacuum' }, null);
   add('weather.home', 'partlycloudy', { friendly_name: 'Home', temperature: 11.2, temperature_unit: '°C', humidity: 81, wind_speed: 14, wind_speed_unit: 'km/h' }, null);
-  add('person.andy', 'home', { friendly_name: 'Andy', device_trackers: ['device_tracker.pixel_8'] }, null);
+  add('person.andy', 'home', { friendly_name: 'Andy', device_trackers: ['device_tracker.pixel_8'], entity_picture: '/tools/harness/andy.svg' }, null);
   // Andy's phone sends the app's Bluetooth beacon; Bermuda follows it room to
   // room and says how far it is from each listener.
   add('sensor.pixel_8_ble_transmitter', 'Transmitting', { friendly_name: 'Pixel 8 BLE Transmitter', id: '0a1b8d57-aaaa-bbbb-cccc-0123456789ab_100_40004' }, null);

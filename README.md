@@ -14,7 +14,7 @@ A live-tile Start screen for Home Assistant, after Windows Phone 10.
 
 - **Live tiles:** small, medium, wide and large tiles in one accent colour. They flip or peek between faces: a room turns over to its temperature or what's playing, the date to your next event, a camera tile shows its picture.
 - **Tiles turn over:** tap a tile and it flips to its controls: a lamp's switch and brightness, a room's lights and plugs, play/pause and volume, a thermostat's setpoint, a blind's open/stop/close. Tap the face again to go in. (`tap: act` brings back one-tap toggling.)
-- **Heating on the back:** a room you can heat turns over to a gauge: what it is set to, large, with the room's temperature on the arc, and a step warmer or cooler beside it (quick taps add up and go as one change). It uses a thermostat in the room, or whatever you pick on the room's settings page (a water heater, or a setpoint helper an automation heats to); the same page picks which sensors give the room's temperature and humidity. A thermostat's own tile turns over to the same gauge.
+- **Heating on the back:** a room you can heat turns over to a gauge: what it is set to, large, with the room's temperature on the arc, and a step warmer or cooler beside it (quick taps add up and go as one change). It uses a thermostat in the room, or whatever you pick on the room's settings page (a water heater, or a setpoint helper an automation heats to); the same page picks which sensors give the room's temperature and humidity. A thermostat's own tile turns over to the same gauge, and a room's climate pivot opens on it.
 - **Numbers read as bars:** in the A–Z list, a number with a range (a setpoint, a fade time, a battery or humidity in %) shades its row as far as its value.
 - **Rooms are apps:** tap a room tile for a full-screen room with pivots (lights, power, climate, media, security...) that you swipe between. Tapping a name opens Home Assistant's own dialog.
 - **The A–Z list:** swipe left (on a desktop it sits beside the tiles) for everything in the house, with search and a letter jump list. It lists **devices** (a smart plug is one row, not five sensors; tap it to open it like a room) or every **entity**: switch at the top, and each viewer's choice is remembered.
@@ -118,6 +118,7 @@ floorplan:
 
 The plan's *people* view puts people and things in the room they're in:
 
+- **People** are shown with their picture from Home Assistant, or their initials.
 - **Phones** that broadcast a beacon (the companion app's *BLE transmitter* sensor) and are followed by [Bermuda](https://github.com/agittins/bermuda) are shown as the person whose phone it is, placed by their distance to each listener. Listeners the plan doesn't place count as the middle of their device's room. The room is held for a minute and a half when the reading drops out.
 - **Things** with a Bermuda or `mqtt_room` area sensor (car keys, a tag on the dog) are shown as diamonds. Tap one in the list underneath to find it.
 - **Radar presence sensors** (LD2410, LD2450) listed under `radars:` show where someone is. If a phone is in that room, it's them; if not, a *?* says someone is there.

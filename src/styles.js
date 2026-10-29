@@ -329,6 +329,12 @@ button { font: inherit; color: inherit; background: none; border: 0; padding: 0;
 .tile.wide .bbody:has(.bheat) .bheat { flex: 0 0 46%; }
 .tile.wide .bbody:has(.bheat) .chips { margin-top: 0; }
 .tile.large .bgauge .gauge { max-height: calc(var(--unit) * 2.4); }
+/* At the top of a room's climate pivot: large, in the accent. */
+.bheat.pheat { max-width: 560px; height: 200px; margin: 4px 0 12px; color: var(--accent2); }
+.bheat.pheat { gap: 18px; }
+.bheat.pheat .bgauge { flex: 0 0 230px; }
+.bheat.pheat .gauge { max-height: 200px; }
+.bheat.pheat .hsteps button { width: 56px; height: 56px; border-color: var(--line); color: var(--fg); font-size: 26px; }
 /* The gauge itself: thin, flat, in whatever colour it sits on. */
 .gauge { overflow: visible; }
 .gauge .gtrack { fill: none; stroke: currentColor; stroke-opacity: .28; stroke-width: 5; stroke-linecap: round; }
