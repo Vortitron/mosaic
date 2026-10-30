@@ -45,7 +45,7 @@ import { planEditMethods } from './plan-edit.js';
 import { locate } from './locator.js';
 import { gaugeSvg } from './gauge.js';
 
-const VERSION = '0.7.0-beta.17';
+const VERSION = '0.7.0';
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
 const reduced = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
 const ON = ['on', 'open', 'opening', 'unlocked', 'playing', 'home', 'heat', 'cool', 'heat_cool', 'auto', 'cleaning'];

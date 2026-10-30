@@ -1,6 +1,6 @@
 {
   "name": "mosaic",
-  "version": "0.6.0",
+  "version": "0.7.0",
   "private": true,
   "description": "A live-tile Start screen for Home Assistant, after Windows Phone",
   "license": "MIT",
