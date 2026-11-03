@@ -33,11 +33,13 @@ A live-tile Start screen for Home Assistant, after Windows Phone 10.
 
 ## Install
 
-**Home Assistant 2026.11 and later (the Marketplace):** Mosaic is waiting to join the catalogue. Until then, add `https://github.com/Vortitron/mosaic` as a custom repository of type *Dashboard* in Settings → Marketplace. Custom repositories need GitHub connected there, and only get update checks while it is.
+**Home Assistant 2026.11 and later:** open Settings → Marketplace, search for **Mosaic** and install it.
 
-**Earlier versions, with HACS:** add the same address as a custom repository of type *Dashboard*, then download Mosaic.
+**Earlier versions, with HACS:** open HACS, search for **Mosaic** and download it.
 
 Either way the card's resource is registered for you.
+
+**From the repository, if the search doesn't find it** (an older HACS catalogue, say): add `https://github.com/Vortitron/mosaic` as a custom repository of type *Dashboard* in the Marketplace or HACS, then install Mosaic from there. On the Marketplace, custom repositories need GitHub connected, and only get update checks while it is.
 
 **By hand:** download `mosaic.js` from the [latest release](https://github.com/Vortitron/mosaic/releases/latest) into `/config/www/mosaic/`, and add `/local/mosaic/mosaic.js` as a JavaScript module resource (Settings → Dashboards → ⋮ → Resources).
 
