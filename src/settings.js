@@ -724,11 +724,14 @@ export const settingsMethods = {
     const rooms = this._config.rooms || {};
     const chosen = (rooms[areaId] && rooms[areaId].heating) || '';
     const auto = heatingOf(hass, areaId, null);
-    const sensors = (dc) => order(all.filter((id) => id.startsWith('sensor.') && hass.states[id].attributes.device_class === dc));
+    // A room's own sensors only: one from another room would give this room
+    // that room's temperature (GamlaBio: the bedroom read Bio's humidity).
+    // One already set from elsewhere still shows, with its room, to undo.
+    const sensors = (dc, chosen) => order(all.filter((id) => id.startsWith('sensor.') && hass.states[id].attributes.device_class === dc && (mine.has(id) || id === chosen)));
     const editable = this._canEdit();
     return `<label class="field"><span>heating: what the room tile turns over to</span><select class="aheat" data-area="${esc(areaId)}" ${editable ? '' : 'disabled'}><option value="">${auto ? `automatic (${esc(nameOf(hass, auto))})` : 'none'}</option>${heaters.map((id) => option(id, chosen)).join('')}</select></label>
-      <label class="field"><span>temperature from</span><select class="atemp" data-area="${esc(areaId)}"><option value="">automatic</option>${sensors('temperature').map((id) => option(id, a.temperature_entity_id)).join('')}</select></label>
-      <label class="field"><span>humidity from</span><select class="ahum" data-area="${esc(areaId)}"><option value="">automatic</option>${sensors('humidity').map((id) => option(id, a.humidity_entity_id)).join('')}</select></label>`;
+      <label class="field"><span>temperature from</span><select class="atemp" data-area="${esc(areaId)}"><option value="">automatic</option>${sensors('temperature', a.temperature_entity_id).map((id) => option(id, a.temperature_entity_id)).join('')}</select></label>
+      <label class="field"><span>humidity from</span><select class="ahum" data-area="${esc(areaId)}"><option value="">automatic</option>${sensors('humidity', a.humidity_entity_id).map((id) => option(id, a.humidity_entity_id)).join('')}</select></label>`;
   },
 
   _roomName(entityId) {

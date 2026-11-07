@@ -45,7 +45,7 @@ import { planEditMethods } from './plan-edit.js';
 import { locate } from './locator.js';
 import { gaugeSvg } from './gauge.js';
 
-const VERSION = '0.7.0';
+const VERSION = '0.7.1-beta.1';
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
 const reduced = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
 const ON = ['on', 'open', 'opening', 'unlocked', 'playing', 'home', 'heat', 'cool', 'heat_cool', 'auto', 'cleaning'];
@@ -97,6 +97,38 @@ function rangeStyle(st) {
   return ` ranged" style="--pct:${pct}%`;
 }
 
+// Config keys that change what is shown, not how: filled in where it is.
+const LIGHT_KEYS = ['rooms', 'groups', 'tiles', 'floorplan', 'floorplan_from', 'brand_icons', 'calendars'];
+
+const stable = (v) => JSON.stringify(v, (k, x) => (x && typeof x === 'object' && !Array.isArray(x) ? Object.fromEntries(Object.entries(x).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))) : x));
+
+// The top-level keys whose value differs between two configs.
+function configChanges(a, b) {
+  const keys = new Set([...Object.keys(a || {}), ...Object.keys(b || {})]);
+  return [...keys].filter((k) => stable((a || {})[k]) !== stable((b || {})[k]));
+}
+
+// Saving the dashboard can make Home Assistant build a new card: a note, a
+// few seconds long, lets that card open where this one was.
+const RESUME_KEY = 'mosaic.resume';
+function leaveResume(state) {
+  try {
+    sessionStorage.setItem(RESUME_KEY, JSON.stringify({ ...state, at: Date.now(), path: location.pathname }));
+  } catch (e) {
+    /* not kept, then */
+  }
+}
+function takeResume() {
+  try {
+    const raw = sessionStorage.getItem(RESUME_KEY);
+    sessionStorage.removeItem(RESUME_KEY);
+    const r = raw && JSON.parse(raw);
+    return r && Date.now() - r.at < 15000 && r.path === location.pathname ? r : null;
+  } catch (e) {
+    return null;
+  }
+}
+
 // Bring a live list row from oldHtml to newHtml by changing only what changed:
 // attributes in place, and an element swapped only where its own content did.
 // The icon stays the same element (a new one draws blank first, so it
@@ -146,9 +178,28 @@ class MosaicStart extends HTMLElement {
 
   setConfig(config) {
     if (config.assistant !== undefined && config.assistant !== false && typeof config.assistant !== 'object') throw new Error('assistant: false, or { agent_id, name }');
-    this._config = { theme: 'auto', light_colours: false, ...config };
+    const prev = this._config;
+    const next = { theme: 'auto', light_colours: false, ...config };
+    this._config = next;
     this._layoutSig = null;
-    if (this._hass) this._render();
+    if (!this._hass) return;
+    const shown = this.shadowRoot.querySelector('.root');
+    if (shown && prev) {
+      // Home Assistant hands back what Mosaic itself just saved (a room's
+      // heating, a moved tile): nothing to redraw. And a change to what is
+      // shown, not how, is filled in where it is, so an open room stays open.
+      const changed = configChanges(prev, next);
+      if (!changed.length) return;
+      if (changed.every((k) => LIGHT_KEYS.includes(k))) {
+        if (changed.some((k) => k === 'floorplan' || k === 'floorplan_from')) this._loadPlan();
+        if (!this._edit) this._fillGroups();
+        this._fillHub();
+        this._refresh();
+        if (this._overlay && (this._overlay.kind === 'room' || this._overlay.kind === 'device')) this._renderApp();
+        return;
+      }
+    }
+    this._render();
   }
 
   set hass(hass) {
@@ -242,8 +293,26 @@ class MosaicStart extends HTMLElement {
     return matchMedia('(prefers-color-scheme: dark)').matches;
   }
 
+  // Where the viewer is: the tab, and the room or device app with its pivot.
+  _uiState() {
+    const o = this._overlay;
+    return {
+      tab: this._tab || 'start',
+      app: o && (o.kind === 'room' || o.kind === 'device') ? { kind: o.kind, area: o.area, device: o.device, pivot: this._appPivot || null } : null,
+    };
+  }
+
+  _restoreUi(state) {
+    if (!state) return;
+    if (state.tab && state.tab !== 'start') this._goTab(state.tab);
+    if (state.app) this._openApp({ ...state.app, under: null });
+  }
+
   _render() {
     if (!this._hass || !this._config) return;
+    // A rebuild (a new accent, say) keeps the viewer where they were; so does
+    // a new card Home Assistant makes after a save (see _saveConfig).
+    const keep = this.shadowRoot.querySelector('.root') ? this._uiState() : takeResume();
     this._edit = null;
     this.classList.toggle('light', !this._dark());
     this.classList.toggle('flat', this._config.tile_style === 'flat');
@@ -338,6 +407,7 @@ class MosaicStart extends HTMLElement {
     this._fillHub();
     this._fillGroups();
     this._refresh();
+    if (keep) requestAnimationFrame(() => this._restoreUi(keep));
   }
 
   // --- tabs: start, the house, settings ---------------------------------------
@@ -945,6 +1015,7 @@ class MosaicStart extends HTMLElement {
       this._toast(target.error);
       return false;
     }
+    leaveResume(this._uiState());
     try {
       await this._hass.callWS({ type: 'lovelace/config/save', url_path: target.urlPath, config: target.build(patch) });
     } catch (e) {
@@ -1386,7 +1457,16 @@ class MosaicStart extends HTMLElement {
       const i = Math.round(pages.scrollLeft / Math.max(1, pages.children[0].clientWidth));
       heads.forEach((b, j) => b.classList.toggle('on', j === i));
       if (heads[i]) heads[i].scrollIntoView({ block: 'nearest', inline: 'nearest' });
+      this._appPivot = pivots[i] ? pivots[i][0] : null;
     });
+    // Start on the pivot asked for (the one the last room was on, say), if
+    // this room has it.
+    const startAt = Math.max(0, pivots.findIndex(([p]) => p === spec.pivot));
+    this._appPivot = pivots[startAt] ? pivots[startAt][0] : null;
+    if (startAt) {
+      heads.forEach((b, j) => b.classList.toggle('on', j === startAt));
+      requestAnimationFrame(() => pages.scrollTo({ left: pages.children[startAt].offsetLeft - pages.offsetLeft, behavior: 'auto' }));
+    }
     pages.addEventListener('click', async (e) => {
       if (e.target.closest('.ppage[data-pivot="settings"]')) {
         await this._deviceSettingsEvent(e);

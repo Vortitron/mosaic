@@ -65,6 +65,7 @@ test("a chosen heating control wins over the room's own thermostat", () => {
   const c = heatControl(hass, 'input_number.office_setpoint', 18.2);
   assert.equal(c.target, 19.5);
   assert.equal(c.current, 18.2);
+  assert.equal(heatControl(hass, 'input_number.office_setpoint', 16.9538497924805).current, 17, 'readings round to one decimal');
   assert.deepEqual(c.up, ['input_number', 'set_value', { entity_id: 'input_number.office_setpoint', value: 20 }]);
   assert.deepEqual(c.down[2].value, 19);
   // Never past the ends.
@@ -73,8 +74,11 @@ test("a chosen heating control wins over the room's own thermostat", () => {
 });
 
 test('the gauge shows the part of the range that matters', () => {
+  // Centred on the reading and the setting.
   assert.deepEqual(gaugeRange({ value: 20.3, target: 21, min: 5, max: 35 }), [16, 25]);
-  assert.deepEqual(gaugeRange({ value: 6, target: 7, min: 5, max: 35 }), [5, 11]);
+  // Against the device's lowest: slid along, not cut short (Bio: 15 set, 16.95 read).
+  assert.deepEqual(gaugeRange({ value: 6, target: 7, min: 5, max: 35 }), [5, 14]);
+  assert.deepEqual(gaugeRange({ value: 16.95, target: 15, min: 10, max: 30 }), [11, 20]);
   assert.deepEqual(gaugeRange({ min: 0, max: 100 }), [0, 100]);
   const svg = gaugeSvg({ value: 20.3, target: 21, min: 5, max: 35, big: '21°', small: '20.3° now', label: '<Office>' });
   assert.match(svg, /class="gfill"/);
@@ -99,4 +103,18 @@ test("a room's heating is the thermostat that heats it, and a boiler asks first"
   assert.equal(heatControl(hass, 'climate.boiler_relay_1_thermostat').asks, true);
   add('climate.bio_office_heat', 'off', { friendly_name: 'Bio Office Heaters', temperature: 10 });
   assert.equal(heatControl(hass, 'climate.bio_office_heat').asks, false, 'heaters are what a thermostat is for');
+});
+
+test("a thermostat driven by a desired-temperature helper sets the helper", () => {
+  const hass = makeFakeHass();
+  hass.states['climate.sam'] = { entity_id: 'climate.sam', state: 'heat', attributes: { friendly_name: 'Sam', temperature: 22, current_temperature: 21.46, hvac_action: 'heating', min_temp: 16, max_temp: 30 } };
+  hass.states['input_number.sam_desired_temperature'] = { entity_id: 'input_number.sam_desired_temperature', state: '20.0', attributes: { min: 10, max: 30, step: 1, unit_of_measurement: '°C' } };
+  const c = heatControl(hass, 'climate.sam');
+  assert.equal(c.entity, 'input_number.sam_desired_temperature');
+  assert.equal(c.target, 20);
+  assert.equal(c.current, 21.5, "the room's reading still comes from the heat pump");
+  assert.equal(c.mode, 'heat');
+  assert.deepEqual(c.up, ['input_number', 'set_value', { entity_id: 'input_number.sam_desired_temperature', value: 21 }]);
+  // No helper: the thermostat itself.
+  assert.equal(heatControl(hass, 'climate.house').entity, 'climate.house');
 });

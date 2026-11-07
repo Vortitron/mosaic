@@ -282,7 +282,13 @@ export const artMethods = {
     const room = e.target.closest && e.target.closest('[data-area]');
     if (!room || !room.closest('.liveplan')) return false;
     e.stopPropagation();
-    this._openApp({ kind: 'room', area: room.dataset.area, under: this._overlay ? { ...this._overlay } : null });
+    // The room opens on the pivot you were looking at: the one the last room
+    // was on, or, from the house tab, the one the plan shows (warmth or damp:
+    // climate; lights: lights).
+    const inApp = this._overlay && (this._overlay.kind === 'room' || this._overlay.kind === 'device');
+    const byMode = { temperature: 'climate', humidity: 'climate', lights: 'lights', people: 'security' };
+    const pivot = inApp ? this._appPivot : byMode[this._planMode()];
+    this._openApp({ kind: 'room', area: room.dataset.area, pivot, under: this._overlay ? { ...this._overlay } : null });
     return true;
   },
 };

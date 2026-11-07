@@ -256,7 +256,7 @@ export function autoGroups(hass, { assistant = true, settings = false } = {}) {
   const first = (d) => all.find((id) => domainOf(id) === d) || Object.keys(hass.states).find((id) => domainOf(id) === d);
   const top = [{ type: 'clock', size: 'medium' }];
   if (assistant) top.push({ type: 'assistant', size: 'medium' });
-  const weather = first('weather');
+  const weather = bestWeather(hass) || first('weather');
   if (weather) top.push({ entity: weather, size: 'wide' });
   const people = Object.keys(hass.states).filter((id) => domainOf(id) === 'person' && isUseful(hass, id) && !unavailable(hass.states[id])).slice(0, 4);
   for (const p of people) top.push({ entity: p, size: people.length > 2 ? 'small' : 'medium' });
@@ -513,8 +513,24 @@ function mediaTile(hass, spec, now) {
   return { ...m, label: spec.name || nameOf(hass, pick), active: hass.states[pick].state === 'playing' };
 }
 
+// The home's best weather: one that is there, with the most forecasts
+// (daily, hourly, twice daily). A pinned one that has gone (GamlaBio swapped
+// Met.no for SMHI, and the tile said "none") gives way to it.
+export function bestWeather(hass) {
+  const ids = Object.keys(hass.states).filter((id) => domainOf(id) === 'weather' && !unavailable(hass.states[id]));
+  const forecasts = (id) => {
+    const f = Number(hass.states[id].attributes.supported_features) || 0;
+    return (f & 1 ? 1 : 0) + (f & 2 ? 1 : 0) + (f & 4 ? 1 : 0);
+  };
+  return ids.sort((a, b) => forecasts(b) - forecasts(a))[0] || null;
+}
+
 export function tileModel(hass, spec, now = Date.now(), assistant = null, settings = null, rooms = null) {
   if (spec.entity && rooms && rooms.has(spec.entity)) spec = { ...spec, room: rooms.get(spec.entity) };
+  if (spec.entity && domainOf(spec.entity) === 'weather' && unavailable(hass.states[spec.entity])) {
+    const other = bestWeather(hass);
+    if (other) spec = { ...spec, entity: other };
+  }
   const size = SIZES[spec.size] ? spec.size : 'medium';
   let m;
   if (spec.type === 'clock') m = clockTile(hass, spec, now);

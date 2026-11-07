@@ -25,11 +25,23 @@ function arc(from, to, radius) {
 // A range around what matters: the reading and the setting, with room either
 // side, inside what the device allows. A thermostat that allows 5-35 degrees
 // would otherwise show 20 and 21 as the same place.
+// Centred on them, so they sit mid-arc rather than squeezed at one end.
 export function gaugeRange({ value = null, target = null, min = 0, max = 100, pad = 4 } = {}) {
   const seen = [value, target].filter((v) => typeof v === 'number' && Number.isFinite(v));
   if (!seen.length) return [min, max];
-  const lo = Math.max(min, Math.floor(Math.min(...seen) - pad));
-  const hi = Math.min(max, Math.ceil(Math.max(...seen) + pad));
+  const mid = (Math.min(...seen) + Math.max(...seen)) / 2;
+  const half = Math.max(pad, (Math.max(...seen) - Math.min(...seen)) / 2 + 2);
+  let lo = Math.floor(mid - half);
+  let hi = Math.ceil(mid + half);
+  // Against an end of what the device allows: slide rather than cut short.
+  if (lo < min) {
+    hi = Math.min(max, hi + (min - lo));
+    lo = min;
+  }
+  if (hi > max) {
+    lo = Math.max(min, lo - (hi - max));
+    hi = max;
+  }
   return hi > lo ? [lo, hi] : [min, max];
 }
 
@@ -46,8 +58,9 @@ export function gaugeSvg({ value = null, target = null, min = 0, max = 100, big 
   const middle = big !== null ? big : fmt(target !== null ? target : value);
   let mark = '';
   if (ft !== null) {
-    const [x1, y1] = at(ft, R - 7);
-    const [x2, y2] = at(ft, R + 7);
+    // Mostly outside the arc, so it never reaches the numbers in the middle.
+    const [x1, y1] = at(ft, R - 4);
+    const [x2, y2] = at(ft, R + 8);
     mark = `<line class="gmark" x1="${r2(x1)}" y1="${r2(y1)}" x2="${r2(x2)}" y2="${r2(y2)}"/>`;
   }
   const [ex, ey] = fv !== null ? at(fv, R) : [0, 0];

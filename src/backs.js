@@ -42,13 +42,32 @@ export function heatingOf(hass, areaId, rooms = null) {
   return climates[0] || null;
 }
 
+// A thermostat whose setting an automation drives from a helper ("desired
+// temperature": GamlaBio's heat pump Sam follows input_number.sam_desired_
+// temperature, and resets itself to it). Setting the thermostat directly is
+// overwritten, so the gauge sets the helper.
+export function setpointOf(hass, id) {
+  const d = domainOf(id);
+  if (d !== 'climate' && d !== 'water_heater') return id;
+  const obj = id.split('.')[1];
+  for (const cand of [`input_number.${obj}_desired_temperature`, `input_number.${obj}_target_temperature`, `number.${obj}_desired_temperature`]) {
+    if (hass.states[cand]) return cand;
+  }
+  return id;
+}
+
 // A setpoint as the gauge and its buttons need it: what it is set to, what it
 // reads, the range, and the calls one step down and up.
-export function heatControl(hass, id, reading = null) {
+export function heatControl(hass, idIn, reading = null) {
+  const via = hass.states[idIn];
+  const id = setpointOf(hass, idIn);
   const st = hass.states[id];
   if (!st) return null;
   const d = domainOf(id);
   const a = st.attributes;
+  // Driven through a helper: the thermostat still says what the room reads
+  // and whether it is heating.
+  const thermo = id !== idIn && via ? via.attributes : a;
   let target;
   let min;
   let max;
@@ -68,17 +87,19 @@ export function heatControl(hass, id, reading = null) {
     set = (v) => [d, 'set_value', { entity_id: id, value: v }];
   }
   if (target === null) return null;
-  const current = reading ?? num(a.current_temperature);
+  // One decimal: a sensor's raw 16.9538497924805 is no use on a gauge.
+  const raw = reading ?? num(thermo.current_temperature);
+  const current = raw === null || raw === undefined ? null : Math.round(raw * 10) / 10;
   const clamp = (v) => +Math.min(max, Math.max(min, v)).toFixed(2);
-  const action = a.hvac_action || '';
+  const action = thermo.hvac_action || '';
   return {
     entity: id, target, current, min, max, step,
     // Degrees show as ° whatever the scale, as a thermostat's do.
     unit: d === 'number' || d === 'input_number' ? (/^°/.test(a.unit_of_measurement || '') ? '°' : (a.unit_of_measurement || '')) : '°',
-    mode: st.state, action,
+    mode: id !== idIn && via ? via.state : st.state, action,
     // A boiler's thermostat (by name or room) asks before its setting moves.
     asks: looksImportant(hass, id, { anyDomain: true }),
-    heating: action === 'heating' || (d === 'climate' && st.state === 'heat' && current !== null && current < target),
+    heating: action === 'heating' || ((d === 'climate' || id !== idIn) && (via || st).state === 'heat' && current !== null && current < target),
     down: set(clamp(target - step)), up: set(clamp(target + step)),
   };
 }
