@@ -39,6 +39,11 @@ const OUT = process.argv[2] || 'docs';
     await p.waitForFunction(() => window.card.shadowRoot.querySelector('.housepage svg.plan'));
     await p.waitForTimeout(600);
   } });
+  await shot('calendar', { w: 1280, h: 760, act: async (p) => {
+    await p.evaluate(() => window.card._goTab('calendar'));
+    await p.waitForFunction(() => window.card.shadowRoot.querySelector('.calagenda .calev'));
+    await p.waitForTimeout(400);
+  } });
   await shot('climate', { act: async (p) => {
     await p.evaluate(async () => {
       window.card._openApp({ kind: 'room', area: 'hallway' });

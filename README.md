@@ -15,13 +15,15 @@ A live-tile Start screen for Home Assistant, after Windows Phone 10.
 <img src="docs/customise.jpg" width="190" alt="Customising Start: a tile resized, with its unpin and resize handles">
 </p>
 <img src="docs/people.jpg" width="780" alt="The house tab on a desktop: the floors stacked and tilted, showing who is where: a person with their picture, a set of keys, and a radar seeing someone in the office">
+<img src="docs/calendar.jpg" width="780" alt="The calendar tab on a desktop: the agenda of the coming weeks beside the month, each calendar in its own colour">
 <img src="docs/settings.jpg" width="780" alt="Settings, device first: devices grouped by room, with a search and a button to add a helper">
 <img src="docs/desktop.jpg" width="780" alt="On a desktop: the device list beside the tiles, in the light theme with a magenta accent">
 
 - **Live tiles:** small, medium, wide and large tiles in one accent colour. They flip or peek between faces: a room turns over to its temperature or what's playing, the date to your next event, a camera tile shows its picture.
 - **Tiles turn over:** tap a tile and it flips to its controls: a lamp's switch and brightness, a room's lights and plugs, play/pause and volume, a thermostat's setpoint, a blind's open/stop/close. Tap the face again to go in. (`tap: act` brings back one-tap toggling.)
 - **Heating on the back:** a room you can heat turns over to a gauge: what it is set to, large, with the room's temperature on the arc, and a step warmer or cooler beside it (quick taps add up and go as one change). It uses a thermostat in the room, or whatever you pick on the room's settings page (a water heater, or a setpoint helper an automation heats to); the same page picks which of the room's own sensors give its temperature and humidity. A thermostat whose setting an automation drives from a *desired temperature* helper (`input_number.<thermostat>_desired_temperature`) is set through that helper, so your automation doesn't undo it. A thermostat's own tile turns over to the same gauge, and a room's climate pivot opens on it.
-- **Three tabs:** *start*, *house* and *settings* along the top, as pivot headers. Tap the one you're on to go back to its top.
+- **Tabs:** *start*, *house*, *calendar* and *settings* along the top, as pivot headers. Tap the one you're on to go back to its top.
+- **The calendar:** an agenda of the month ahead and a month you can page through (side by side on a desktop), each calendar in its own colour; tap the chips to choose which show (each viewer's choice is kept). Tap an event for its details, and delete it where the calendar allows; *+ event* adds one to a calendar that takes them (Local Calendar, Google, CalDAV and others). The date tile opens it.
 - **The house, drawn:** the *house* tab is your floor plan, coloured by which lights are on, the temperature or the humidity. On a wide screen the floors are stacked and tilted, and pointing at one lifts it; on a phone they sit flat, one above the other, as big as the screen allows. A *people* view shows who is where (see below). Tap a room to open it.
 - **Rooms are apps:** tap a room tile for a full-screen room with pivots (lights, power, climate, media, security...) that you swipe between. Tapping a name opens Home Assistant's own dialog.
 - **The A–Z list:** swipe left (on a desktop it sits beside the tiles) for everything in the house, with search and a letter jump list. It lists **devices** (a smart plug is one row, not five sensors; tap it to open it like a room) or every **entity**: switch at the top, and each viewer's choice is remembered.
@@ -80,6 +82,7 @@ rooms:                  # per room (set from the room's settings page)
 settings: true          # false hides the settings tab and tile (they are only ever shown to admins)
 brand_icons: true       # false: integrations get a letter instead of their logo from brands.home-assistant.io
 show_plan: true         # false: no house tab
+show_calendar: true     # false: no calendar tab (it shows when the home has calendars)
 plan_view: stack        # stack (floors tilted on top of each other, on wide screens) | flat
 floorplan_from: my-plan # a dashboard whose config holds a floor plan (see below)
 floorplan:              # or the plan itself; false turns plans off

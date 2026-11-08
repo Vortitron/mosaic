@@ -73,8 +73,26 @@ export function makeFakeHass(onUpdate, { agent = 'anthropic' } = {}) {
   add('sensor.car_keys_area', 'Kitchen', { friendly_name: 'Car Keys Area' }, null, { platform: 'bermuda' });
   add('person.sam', 'not_home', { friendly_name: 'Sam' }, null);
   const soon = new Date(Date.now() + 2 * 3600e3);
+  let calendarEvents = {};
   const fmt = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}:00`;
-  add('calendar.family', 'off', { friendly_name: 'Family', message: 'Dentist', start_time: fmt(soon), end_time: fmt(new Date(soon.getTime() + 3600e3)) }, null);
+  add('calendar.family', 'off', { friendly_name: 'Family', message: 'Dentist', start_time: fmt(soon), end_time: fmt(new Date(soon.getTime() + 3600e3)), supported_features: 7 }, null);
+  add('calendar.bins', 'off', { friendly_name: 'Bins', supported_features: 0 }, null);
+  // A few weeks of a made-up family's events, for the calendar tab.
+  const day0 = new Date(); day0.setHours(0, 0, 0, 0);
+  const at = (days, h, m = 0) => new Date(day0.getFullYear(), day0.getMonth(), day0.getDate() + days, h, m);
+  const ymd = (days) => { const x = at(days, 0); return `${x.getFullYear()}-${String(x.getMonth() + 1).padStart(2, '0')}-${String(x.getDate()).padStart(2, '0')}`; };
+  const timed = (uid, days, h, len, summary, extra = {}) => ({ uid, summary, start: { dateTime: at(days, h).toISOString() }, end: { dateTime: new Date(at(days, h).getTime() + len * 3600e3).toISOString() }, ...extra });
+  const allDay = (uid, days, n, summary) => ({ uid, summary, start: { date: ymd(days) }, end: { date: ymd(days + n) } });
+  calendarEvents = {
+    'calendar.family': [
+      { ...timed('e1', 0, soon.getHours(), 1, 'Dentist'), start: { dateTime: soon.toISOString() }, end: { dateTime: new Date(soon.getTime() + 3600e3).toISOString() }, location: 'High Street surgery' },
+      ...[1, 8, 15, 22].map((n, i) => timed(`swim${i}`, n, 17, 1, 'Swimming', { location: 'Leisure centre', recurrence_id: `r${i}` })),
+      allDay('e3', 9, 3, 'Grandma visiting'),
+      timed('e4', 3, 19, 2.5, 'Book club', { description: 'Bring the second half read.' }),
+      timed('e5', 5, 22, 4, 'Birthday party'),
+    ],
+    'calendar.bins': [0, 14, 28].map((n, i) => allDay(`b${i}`, n + 4, 1, 'Bins: paper and card')),
+  };
   add('automation.night', 'on', { friendly_name: 'Night mode' }, null);
   add('conversation.claude', 'unknown', { friendly_name: 'Claude conversation' }, null, { platform: agent });
 
@@ -112,8 +130,28 @@ export function makeFakeHass(onUpdate, { agent = 'anthropic' } = {}) {
         if (service === 'media_play_pause') set(id, states[id].state === 'playing' ? 'paused' : 'playing');
       }, 100);
     },
+    // Home Assistant's calendar API: the events in a range.
+    callApi: async (method, path) => {
+      const m = /^calendars\/([^?]+)\?start=([^&]+)&end=(.+)$/.exec(path);
+      if (method === 'GET' && m) {
+        const [a, b] = [new Date(decodeURIComponent(m[2])), new Date(decodeURIComponent(m[3]))];
+        const t = (v) => new Date(v.dateTime || `${v.date}T00:00:00`);
+        return (calendarEvents[m[1]] || []).filter((e) => t(e.start) < b && t(e.end) > a);
+      }
+      throw new Error('unknown ' + method + ' ' + path);
+    },
     callWS: async (msg) => {
       ws.push(msg);
+      if (msg.type === 'calendar/event/create') {
+        const list = (calendarEvents[msg.entity_id] = calendarEvents[msg.entity_id] || []);
+        const ev = msg.event;
+        list.push({ uid: `new${list.length}`, summary: ev.summary, location: ev.location, description: ev.description, start: ev.dtstart.length === 10 ? { date: ev.dtstart } : { dateTime: new Date(ev.dtstart).toISOString() }, end: ev.dtend.length === 10 ? { date: ev.dtend } : { dateTime: new Date(ev.dtend).toISOString() } });
+        return null;
+      }
+      if (msg.type === 'calendar/event/delete') {
+        calendarEvents[msg.entity_id] = (calendarEvents[msg.entity_id] || []).filter((e) => !(e.uid === msg.uid && (!msg.recurrence_id || e.recurrence_id === msg.recurrence_id)));
+        return null;
+      }
       if (msg.type === 'assist_pipeline/pipeline/list') return { preferred_pipeline: 'p1', pipelines: [{ id: 'p1', name: 'Home Assistant', conversation_engine: 'conversation.claude' }] };
       // The dashboard this card sits on: a Mosaic strategy dashboard.
       if (msg.type === 'lovelace/config') return JSON.parse(JSON.stringify(hass.dashboard));

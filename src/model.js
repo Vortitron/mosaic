@@ -479,7 +479,9 @@ function clockTile(hass, spec, now) {
   const faces = [{ kind: 'date', day: String(d.getDate()), wd: WEEKDAYS[d.getDay()], month: MONTHS[d.getMonth()] }];
   const next = nextEvent(hass, now, spec.calendars);
   if (next) faces.push({ kind: 'text', t1: next.when, t2: next.title, t3: next.calendar });
-  return { label: spec.name || '', active: true, faces, tap: next ? { action: 'more-info', entity: next.entity } : { action: 'none' } };
+  // Tapping the date opens the calendar tab (where there are calendars).
+  const hasCalendars = Object.keys(hass.states).some((id) => domainOf(id) === 'calendar');
+  return { label: spec.name || '', active: true, faces, tap: hasCalendars ? { action: 'calendar' } : { action: 'none' } };
 }
 
 // The soonest event; `only` limits it to some calendars (a home subscribed to

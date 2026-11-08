@@ -44,8 +44,9 @@ import { artMethods } from './art.js';
 import { planEditMethods } from './plan-edit.js';
 import { locate } from './locator.js';
 import { gaugeSvg } from './gauge.js';
+import { calendarMethods } from './calendar.js';
 
-const VERSION = '0.7.1-beta.1';
+const VERSION = '0.7.1-beta.2';
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
 const reduced = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
 const ON = ['on', 'open', 'opening', 'unlocked', 'playing', 'home', 'heat', 'cool', 'heat_cool', 'auto', 'cleaning'];
@@ -336,6 +337,7 @@ class MosaicStart extends HTMLElement {
         </div>
         </div>
         <div class="tabpane house"></div>
+        <div class="tabpane calendar"></div>
         <div class="tabpane settings"></div>
         <div class="editbar" role="toolbar" aria-label="customise start">
           <button data-done="save">done</button><button data-done="auto">automatic</button><button data-done="cancel">cancel</button>
@@ -418,6 +420,7 @@ class MosaicStart extends HTMLElement {
     // will have at least a sketch, so the tab is there from the start.
     const planComing = !this._planLoaded && this._hass && Object.keys(this._hass.areas || {}).length > 0;
     if ((this._plan || planComing) && this._config.show_plan !== false) tabs.push('house');
+    if (this._config.show_calendar !== false && this._hass && Object.keys(this._hass.states).some((id) => id.startsWith('calendar.'))) tabs.push('calendar');
     if (this._canManage()) tabs.push('settings');
     return tabs;
   }
@@ -459,6 +462,8 @@ class MosaicStart extends HTMLElement {
       this._wallpaper();
     } else if (tab === 'house') {
       this._fillHouse();
+    } else if (tab === 'calendar') {
+      this._fillCalendar();
     } else if (tab === 'settings') {
       if (!root.querySelector('.tabpane.settings .app.settings')) this._buildSettings(pivot || 'attention');
       else if (pivot || again) this._showSettingsPivot(pivot || 'attention');
@@ -608,6 +613,7 @@ class MosaicStart extends HTMLElement {
     if (!this._edit && !this._config.groups && !this._config.tiles && JSON.stringify(this._groups()) !== this._layoutSig) this._fillGroups();
     else this._refreshTiles();
     this._renderList();
+    this._calCheck();
     if (this._overlay && (this._overlay.kind === 'room' || this._overlay.kind === 'device')) this._renderApp();
   }
 
@@ -923,6 +929,7 @@ class MosaicStart extends HTMLElement {
     }
     const a = t.model.tap;
     if (a.action === 'room') return this._openApp({ kind: 'room', area: a.area });
+    if (a.action === 'calendar') return this._goTab('calendar');
     if (a.action === 'assistant') return this._openAssist();
     if (a.action === 'settings') return this._openSettings();
     if (a.action === 'more-info') return this._moreInfo(a.entity);
@@ -1805,7 +1812,7 @@ class MosaicStart extends HTMLElement {
   }
 }
 
-Object.assign(MosaicStart.prototype, settingsMethods, artMethods, planEditMethods);
+Object.assign(MosaicStart.prototype, settingsMethods, artMethods, planEditMethods, calendarMethods);
 
 class MosaicStrategy extends HTMLElement {
   // The same settings for a whole Mosaic dashboard ("Edit dashboard").

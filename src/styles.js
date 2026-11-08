@@ -34,7 +34,7 @@ button { font: inherit; color: inherit; background: none; border: 0; padding: 0;
 .editing .hub { visibility: hidden; }
 .tabpane { flex: 1 1 auto; min-height: 0; display: none; position: relative; }
 .tabpane.on { display: block; }
-.tabpane.settings.on { display: flex; }
+.tabpane.settings.on, .tabpane.calendar.on { display: flex; }
 .app.intab { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; position: relative; }
 .app.intab .pivots button { font-size: 22px; }
 .desk .app.intab .pivots, .desk .app.intab .ppage { padding-left: 16px; }
@@ -434,4 +434,51 @@ button { font: inherit; color: inherit; background: none; border: 0; padding: 0;
 .msg .menu button { display: block; width: 100%; text-align: left; font-size: 20px; font-weight: 350; padding: 10px 0; }
 
 @media (prefers-reduced-motion: reduce) { .overlay, .msg .box { animation: none; } .tile { transition: none; } }
+
+/* --- the calendar tab: agenda and month, each calendar its own colour ------ */
+.app.calendar { padding: 0 var(--pad) 24px; overflow-y: auto; }
+.desk .app.calendar { padding: 0 16px 24px; }
+.calbar { display: flex; align-items: center; gap: 12px; }
+.calbar .pivots { padding-left: 0; }
+.calchips { display: flex; flex-wrap: wrap; gap: 6px; margin: 2px 0 12px; max-width: 760px; }
+.calchip { display: inline-flex; align-items: center; gap: 6px; padding: 4px 9px; border: 1px solid var(--line); font-size: 13px; color: var(--fg2); }
+.calchip i { width: 10px; height: 10px; background: var(--cal); opacity: .35; }
+.calchip.on { color: var(--fg); border-color: var(--cal); }
+.calchip.on i { opacity: 1; }
+.calbody { position: relative; max-width: 560px; }
+/* On a desktop there is room for both: the agenda, and the month beside it. */
+.desk .calbody { display: grid; grid-template-columns: minmax(0, 560px) minmax(0, 480px); gap: 48px; max-width: none; align-items: start; }
+.desk .calbody > [data-cpage] { display: block !important; }
+.desk .calbar .pivots { display: none; }
+.calhead { margin: 16px 0 6px; }
+.calhead.today { color: var(--accent2); }
+.calev { display: flex; align-items: center; gap: 12px; min-height: 52px; padding: 6px 8px 6px 10px; border-left: 4px solid var(--cal); cursor: pointer; }
+.calev:nth-of-type(even) { background: color-mix(in srgb, var(--fg) 4%, transparent); }
+.calev:active { opacity: .7; }
+.caltime { flex: 0 0 96px; font-size: 14px; color: var(--fg2); }
+.calmhead { display: flex; align-items: center; justify-content: space-between; margin: 4px 0 8px; font-size: 22px; font-weight: 300; text-transform: lowercase; }
+.calmhead button { width: 44px; height: 44px; font-size: 26px; color: var(--fg2); }
+.calgrid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 3px; }
+.calwd { text-align: center; font-size: 12px; color: var(--fg2); padding-bottom: 2px; }
+.calcell { aspect-ratio: 1; min-height: 40px; display: flex; flex-direction: column; justify-content: space-between; align-items: flex-start; padding: 4px 5px; background: color-mix(in srgb, var(--fg) 6%, transparent); text-align: left; }
+.calcell span { font-size: 15px; }
+.calcell b { display: flex; gap: 3px; }
+.calcell b i { width: 7px; height: 7px; border-radius: 50%; }
+.calcell.out { opacity: .4; }
+.calcell.today { outline: 2px solid var(--accent); outline-offset: -2px; }
+.calcell.sel { background: var(--accent); color: #fff; }
+.calcell.sel b i { box-shadow: 0 0 0 1px #fff; }
+.calevpage { padding-top: 10px; }
+.caltitle { font-size: 30px; font-weight: 300; margin: 6px 0 10px; border-left: 6px solid var(--cal); padding-left: 10px; }
+.calwhen { font-size: 17px; margin-bottom: 6px; }
+.calwhere { color: var(--fg2); margin-bottom: 10px; }
+.calnotes { white-space: pre-wrap; max-width: 560px; color: var(--fg); opacity: .9; }
+.calform { display: flex; flex-direction: column; gap: 4px; max-width: 560px; }
+.calform input, .calform select, .calform textarea { font: inherit; font-size: 16px; padding: 8px 10px; border: 2px solid var(--line); background: var(--bg); color: var(--fg); width: 100%; }
+.calform input:focus, .calform select:focus, .calform textarea:focus { border-color: var(--accent); outline: none; }
+.calform .check { display: flex; gap: 8px; align-items: center; margin: 6px 0; }
+.calform .check input { width: auto; }
+.caltimes { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.caltimes[hidden] { display: none; }
+.formbtns { margin-top: 10px; }
 `;
