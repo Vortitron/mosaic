@@ -14,7 +14,8 @@ export const CAN_DELETE = 2;
 // calendar keeps its colour from day to day.
 const COLOURS = ['#1ba1e2', '#f09609', '#8cbf26', '#e671b8', '#a05000', '#00aba9', '#e51400', '#a200ff', '#339933', '#d80073'];
 
-export const calendarsOf = (hass) => Object.keys(hass.states).filter((id) => id.startsWith('calendar.')).sort();
+// Calendars that are there to ask (an unavailable one only errors).
+export const calendarsOf = (hass) => Object.keys(hass.states).filter((id) => id.startsWith('calendar.') && hass.states[id].state !== 'unavailable').sort();
 
 export function colourOf(hass, id) {
   const i = calendarsOf(hass).indexOf(id);

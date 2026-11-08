@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { agenda, dayLabel, eventOf, eventsOn, monthGrid, newEvent, onDay, timeOn } from '../src/calendar-model.js';
+import { agenda, calendarsOf, dayLabel, eventOf, eventsOn, monthGrid, newEvent, onDay, timeOn } from '../src/calendar-model.js';
 
 const d = (y, m, day, h = 0, min = 0) => new Date(y, m - 1, day, h, min);
 
@@ -64,4 +64,9 @@ test("Home Assistant's own event, as its calendar API sends it", () => {
   assert.equal(e.uid, null, 'no uid: it cannot be deleted from here');
   assert.equal(e.end - e.start, 3600e3);
   assert.equal(e.location, 'Future Location');
+});
+
+test('an unavailable calendar is left out', () => {
+  const hass = { states: { 'calendar.a': { state: 'off', attributes: {} }, 'calendar.gone': { state: 'unavailable', attributes: {} }, 'light.x': { state: 'on', attributes: {} } } };
+  assert.deepEqual(calendarsOf(hass), ['calendar.a']);
 });

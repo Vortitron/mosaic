@@ -141,7 +141,10 @@ export const calendarMethods = {
     for (const b of app.querySelectorAll('[data-cp]')) b.classList.toggle('on', b.dataset.cp === c.pivot);
     for (const p of app.querySelectorAll('[data-cpage]')) p.hidden = p.dataset.cpage !== c.pivot;
     app.querySelector('[data-calnew]').hidden = ![...shown].some((id) => canCreate(hass, id)) && !calendarsOf(hass).some((id) => canCreate(hass, id));
-    const chips = calendarsOf(hass).map((id) => `<button class="calchip${shown.has(id) ? ' on' : ''}" data-calchip="${esc(id)}" aria-pressed="${shown.has(id)}" style="--cal:${colourOf(hass, id)}"><i></i>${esc(name(id))}</button>`).join('');
+    // The ones showing first: a home with seventeen calendars (holidays of
+    // four countries) wants its own at hand.
+    const ordered = [...calendarsOf(hass)].sort((a, b) => (shown.has(b) - shown.has(a)) || name(a).localeCompare(name(b)));
+    const chips = ordered.map((id) => `<button class="calchip${shown.has(id) ? ' on' : ''}" data-calchip="${esc(id)}" aria-pressed="${shown.has(id)}" title="${esc(name(id))}" style="--cal:${colourOf(hass, id)}"><i></i><span>${esc(name(id))}</span></button>`).join('');
     const put = (sel, html) => {
       const el = app.querySelector(sel);
       if (el.dataset.html === html) return;

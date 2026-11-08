@@ -443,6 +443,7 @@ button { font: inherit; color: inherit; background: none; border: 0; padding: 0;
 .calchips { display: flex; flex-wrap: wrap; gap: 6px; margin: 2px 0 12px; max-width: 760px; }
 .calchip { display: inline-flex; align-items: center; gap: 6px; padding: 4px 9px; border: 1px solid var(--line); font-size: 13px; color: var(--fg2); }
 .calchip i { width: 10px; height: 10px; background: var(--cal); opacity: .35; }
+.calchip span { max-width: 180px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .calchip.on { color: var(--fg); border-color: var(--cal); }
 .calchip.on i { opacity: 1; }
 .calbody { position: relative; max-width: 560px; }
