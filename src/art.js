@@ -6,6 +6,7 @@ import { areaOfRoom, bbox, levelSvg, planLevels, stackSvg, validPlan } from './p
 import { areaClimate, entitiesByArea, guessAreaIcon } from './model.js';
 import { PLAN_MODES } from './plan.js';
 import { findPeople, findThings, initials, locate } from './locator.js';
+import { attachZoom } from './zoom.js';
 
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
 
@@ -197,8 +198,18 @@ export const artMethods = {
     this._houseTall = tall;
     const stack = this._config.plan_view !== 'flat' && !tall;
     const sketch = this._planIsSketch ? '<span class="sketchnote">a sketch of your rooms</span>' : '';
-    const edit = this._canEdit() ? `<button class="link planedit-link" data-planedit="">${this._planIsSketch ? 'draw it properly' : 'edit the plan'}</button>` : '';
-    pane.innerHTML = `<div class="housepage"><div class="housebar">${this._planModesHtml()}<span class="housefill"></span>${sketch}${edit}</div><div class="liveplan${tall ? ' tall' : ''}" data-plan="all"${stack ? ' data-stack="1"' : ''}>${this._planHtml({ labels: true, stack })}</div><div class="whobox">${this._whoListHtml()}</div></div>`;
+    const edit = this._canEdit() ? `<button class="link planedit-link" data-planedit="">${this._planIsSketch ? 'draw it properly' : 'edit'}</button>` : '';
+    // The plan sits in a window it can be zoomed and dragged within: pinch
+    // (or the wheel) to look closer at a small room, drag to move about.
+    const keep = this._zoom ? this._zoom.get() : null;
+    if (this._zoom) this._zoom.detach();
+    pane.innerHTML = `<div class="housepage"><div class="housebar">${this._planModesHtml()}<span class="housefill"></span>${sketch}<button class="link planfit" data-planfit="" hidden>fit</button>${edit}</div><div class="planzoom"><div class="liveplan${tall ? ' tall' : ''}" data-plan="all"${stack ? ' data-stack="1"' : ''}>${this._planHtml({ labels: true, stack })}</div></div><div class="whobox">${this._whoListHtml()}</div></div>`;
+    const fit = pane.querySelector('[data-planfit]');
+    this._zoom = attachZoom(pane.querySelector('.planzoom'), pane.querySelector('.liveplan'), { start: keep && keep.s > 1 ? keep : null, onChange: (t) => { fit.hidden = t.s <= 1.01; } });
+    fit.addEventListener('click', (e) => {
+      e.stopPropagation();
+      this._zoom.reset();
+    });
     this._planSig = null;
   },
 

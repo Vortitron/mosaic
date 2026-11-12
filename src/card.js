@@ -46,7 +46,7 @@ import { locate } from './locator.js';
 import { gaugeSvg } from './gauge.js';
 import { calendarMethods } from './calendar.js';
 
-const VERSION = '0.7.1-beta.3';
+const VERSION = '0.7.1-beta.4';
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
 const reduced = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
 const ON = ['on', 'open', 'opening', 'unlocked', 'playing', 'home', 'heat', 'cool', 'heat_cool', 'auto', 'cleaning'];
@@ -96,6 +96,13 @@ function rangeStyle(st) {
   if (!(hi > lo)) return '';
   const pct = Math.round(Math.min(1, Math.max(0, (v - lo) / (hi - lo))) * 1000) / 10;
   return ` ranged" style="--pct:${pct}%`;
+}
+
+// Is this history state Mosaic's "something is open" entry, as it is or as
+// Home Assistant has wrapped it under one of its dialogs?
+function ownEntry(state, depth = 0) {
+  if (!state || typeof state !== 'object' || depth > 4) return false;
+  return !!state.mosaicOpen || ownEntry(state.oldState, depth + 1);
 }
 
 // Config keys that change what is shown, not how: filled in where it is.
@@ -261,6 +268,23 @@ class MosaicStart extends HTMLElement {
     this._tick = setInterval(() => this._flipSome(), 1000);
     this._minute = setInterval(() => this._refresh(), 30000);
     this._onKey = (e) => this._key(e);
+    // The phone's back button (or gesture) closes what is open on top
+    // (a room, an event, a menu) instead of leaving the dashboard.
+    this._onPop = () => {
+      if (this._histSkip) {
+        this._histSkip = false;
+        return;
+      }
+      if (!this._histPushed) return;
+      // Still on Mosaic's own entry: something above it was closed (Home
+      // Assistant's dialog over a room, which keeps the entry under it in
+      // oldState while it is open). Only leaving the entry closes the room.
+      if (ownEntry(history.state)) return;
+      this._histPushed = false;
+      const layer = this.shadowRoot.querySelector('.layer');
+      if (layer && layer.children.length) this._close();
+    };
+    window.addEventListener('popstate', this._onPop);
     window.addEventListener('keydown', this._onKey);
     if (this._hass && this._config) this._render();
   }
@@ -271,6 +295,8 @@ class MosaicStart extends HTMLElement {
     clearInterval(this._tick);
     clearInterval(this._minute);
     window.removeEventListener('keydown', this._onKey);
+    window.removeEventListener('popstate', this._onPop);
+    if (this._layerWatch) this._layerWatch.disconnect();
     clearTimeout(this._storeSoon);
     this._storeSoon = null;
     if (this._store) this._store.stop();
@@ -292,6 +318,32 @@ class MosaicStart extends HTMLElement {
     const themes = this._hass && this._hass.themes;
     if (themes && typeof themes.darkMode === 'boolean') return themes.darkMode;
     return matchMedia('(prefers-color-scheme: dark)').matches;
+  }
+
+  // One history entry stands for "something is open on top": made when the
+  // layer fills, taken back when it empties by any other way (the round back
+  // button, Escape), so the browser's own back always has one thing to close.
+  _watchLayer(layer) {
+    if (this._layerWatch) this._layerWatch.disconnect();
+    if (!layer || !('MutationObserver' in window)) return;
+    this._layerWatch = new MutationObserver(() => {
+      const open = layer.children.length > 0;
+      if (open && !this._histPushed) {
+        try {
+          history.pushState({ ...(history.state || {}), mosaicOpen: true }, '');
+          this._histPushed = true;
+        } catch (e) {
+          /* a sandboxed frame: the back button stays the browser's */
+        }
+      } else if (!open && this._histPushed) {
+        this._histPushed = false;
+        if (ownEntry(history.state)) {
+          this._histSkip = true;
+          history.back();
+        }
+      }
+    });
+    this._layerWatch.observe(layer, { childList: true });
   }
 
   // Where the viewer is: the tab, and the room or device app with its pivot.
@@ -346,6 +398,7 @@ class MosaicStart extends HTMLElement {
         <div class="layer"></div>
       </div>`;
     const root = this.shadowRoot;
+    this._watchLayer(root.querySelector('.layer'));
     this._tab = 'start';
     this._wireTiles(root.querySelector('.groups'));
     root.querySelector('.hub').addEventListener('click', (e) => {

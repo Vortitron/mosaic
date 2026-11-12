@@ -123,6 +123,24 @@ export const calendarMethods = {
         <div class="calbody"><div class="calagenda" data-cpage="agenda"></div><div class="calmonthpage" data-cpage="month"><div class="calmonth"></div><div class="calday"></div></div></div>
       </div>`;
       pane.addEventListener('click', (e) => this._calClick(e));
+      // A sideways swipe on the month turns the page.
+      const month = pane.querySelector('.calmonth');
+      let from = null;
+      month.addEventListener('pointerdown', (e) => { from = { x: e.clientX, y: e.clientY }; });
+      month.addEventListener('pointerup', (e) => {
+        if (!from) return;
+        const dx = e.clientX - from.x;
+        const dy = e.clientY - from.y;
+        from = null;
+        if (Math.abs(dx) < 60 || Math.abs(dx) < Math.abs(dy) * 1.5) return;
+        const c = this._calState();
+        const m = new Date(c.year, c.month + (dx < 0 ? 1 : -1), 1);
+        c.year = m.getFullYear();
+        c.month = m.getMonth();
+        this._calSwiped = Date.now();
+        this._calRender();
+        this._calLoad();
+      });
     }
     clearInterval(this._calTimer);
     this._calTimer = setInterval(() => (this._tab === 'calendar' ? this._calLoad() : clearInterval(this._calTimer)), FRESH_MS);
@@ -193,6 +211,8 @@ export const calendarMethods = {
       return this._calLoad();
     }
     const day = t.closest('[data-calday]');
+    // The tap that ends a swipe is not a tap on a day.
+    if (day && Date.now() - (this._calSwiped || 0) < 400) return undefined;
     if (day) {
       const [y, m, d] = day.dataset.calday.split('-').map(Number);
       c.selected = new Date(y, m - 1, d);

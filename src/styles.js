@@ -20,7 +20,7 @@ export const CSS = `
 }
 :host(.light) { --bg: #fff; --fg: #000; --fg2: #666; --chrome: #e6e6e6; --line: #ccc; --accent2: color-mix(in srgb, var(--accent) 78%, #000); }
 * { box-sizing: border-box; }
-button { font: inherit; color: inherit; background: none; border: 0; padding: 0; cursor: pointer; }
+button { font: inherit; color: inherit; background: none; border: 0; padding: 0; cursor: pointer; -webkit-tap-highlight-color: transparent; touch-action: manipulation; }
 :focus-visible { outline: 2px solid var(--fg); outline-offset: 2px; }
 .root { position: relative; height: var(--h, 640px); display: flex; flex-direction: column; }
 
@@ -35,7 +35,7 @@ button { font: inherit; color: inherit; background: none; border: 0; padding: 0;
 .tabpane { flex: 1 1 auto; min-height: 0; display: none; position: relative; }
 .tabpane.on { display: block; }
 .tabpane.settings.on, .tabpane.calendar.on { display: flex; }
-.app.intab { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; position: relative; }
+.app.intab { flex: 1 1 auto; min-height: 0; min-width: 0; display: flex; flex-direction: column; position: relative; }
 .app.intab .pivots button { font-size: 22px; }
 .desk .app.intab .pivots, .desk .app.intab .ppage { padding-left: 16px; }
 .app.intab.wideapp > .art { top: 70px; }
@@ -43,7 +43,7 @@ button { font: inherit; color: inherit; background: none; border: 0; padding: 0;
 /* --- panorama: Start and the A-Z list side by side ------------------------- */
 .pan { display: flex; height: 100%; overflow-x: auto; overflow-y: hidden; scroll-snap-type: x mandatory; scrollbar-width: none; overscroll-behavior-x: contain; }
 .pan::-webkit-scrollbar { display: none; }
-.page { position: relative; flex: 0 0 100%; height: 100%; overflow-y: auto; scroll-snap-align: start; scrollbar-width: thin; padding: var(--pad); }
+.page { position: relative; flex: 0 0 100%; height: 100%; overflow-y: auto; overscroll-behavior-y: contain; scroll-snap-align: start; scrollbar-width: thin; padding: var(--pad); padding-bottom: calc(var(--pad) + env(safe-area-inset-bottom)); }
 .desk .pan { scroll-snap-type: none; overflow: hidden; }
 .desk .page.list { flex: 0 0 320px; order: -1; border-right: 1px solid var(--line); padding: 24px 16px; }
 .desk .page.start { flex: 1 1 auto; padding: 24px 32px; }
@@ -167,6 +167,8 @@ button { font: inherit; color: inherit; background: none; border: 0; padding: 0;
 @media (max-width: 1150px) { .wideapp > .art { display: none; } .wideapp .ppage, .wideapp .ipage { padding-right: var(--pad); } }
 .rimg { width: 100%; max-width: 520px; display: block; margin-bottom: 4px; }
 .toggle { flex: 0 0 auto; width: 50px; height: 24px; border: 2px solid var(--fg); border-radius: 12px; position: relative; }
+/* The switch is small to look at and big to hit. */
+.toggle::before { content: ''; position: absolute; inset: -14px -10px; }
 .toggle::after { content: ''; position: absolute; top: 3px; left: 4px; width: 14px; height: 14px; border-radius: 50%; background: var(--fg); transition: left 150ms; }
 .toggle.on { background: var(--accent); border-color: var(--accent); }
 .toggle.on::after { left: 28px; background: #fff; }
@@ -218,12 +220,14 @@ button { font: inherit; color: inherit; background: none; border: 0; padding: 0;
 .housebar .planmodes { margin: 0; }
 .housefill { flex: 1 1 auto; }
 .sketchnote { color: var(--fg2); font-size: 13px; }
-.housepage > .liveplan { flex: 1 1 auto; min-height: 0; display: flex; justify-content: center; align-items: center; }
-.housepage > .liveplan svg { width: 100%; height: 100%; max-height: 100%; }
+.planzoom { flex: 1 1 auto; min-height: 0; position: relative; overflow: hidden; touch-action: none; }
+.planzoom.zoomed { cursor: grab; }
+.planzoom > .liveplan { width: 100%; height: 100%; display: flex; justify-content: center; align-items: center; will-change: transform; }
+.planzoom > .liveplan svg { width: 100%; height: 100%; max-height: 100%; }
 .housepage > .whobox { flex: 0 0 auto; }
-.housepage > .liveplan.tall { flex-direction: column; flex-wrap: nowrap; align-items: stretch; justify-content: flex-start; gap: 10px; }
-.housepage > .liveplan.tall .storey { flex: 1 1 0 !important; min-height: 0; max-width: none; display: flex; flex-direction: column; }
-.housepage > .liveplan.tall .storey svg { flex: 1 1 auto; min-height: 0; height: 100%; }
+.planzoom > .liveplan.tall { flex-direction: column; flex-wrap: nowrap; align-items: stretch; justify-content: flex-start; gap: 10px; }
+.planzoom > .liveplan.tall .storey { flex: 1 1 0 !important; min-height: 0; max-width: none; display: flex; flex-direction: column; }
+.planzoom > .liveplan.tall .storey svg { flex: 1 1 auto; min-height: 0; height: 100%; }
 .plan .wall { fill: none; stroke: var(--fg2); stroke-width: .14; opacity: .55; }
 .plan .wall.out { stroke-dasharray: .35 .25; opacity: .35; }
 .plan .room rect { fill: color-mix(in srgb, var(--fg) 5%, transparent); transition: fill 300ms; }
@@ -235,7 +239,9 @@ button { font: inherit; color: inherit; background: none; border: 0; padding: 0;
 .plan .room.dim { opacity: .55; }
 .plan .room.here rect { fill: var(--accent); }
 .plan .room.here.dim, .plan .room.here { opacity: 1; }
-.plan .room.known:hover rect, .plan .room.known:focus rect { fill: color-mix(in srgb, var(--accent) 70%, var(--fg)); }
+/* Only where there is a pointer to hover with: on a touch screen :hover sticks to the last room tapped. */
+@media (hover: hover) { .plan .room.known:hover rect { fill: color-mix(in srgb, var(--accent) 70%, var(--fg)); } }
+.plan .room.known:focus-visible rect { fill: color-mix(in srgb, var(--accent) 70%, var(--fg)); }
 .plan text.on { fill: #fff; stroke: rgba(0,0,0,.25); }
 .plan text.outside { fill: var(--fg2); font-style: italic; }
 .rooms .ppage > .liveplan { max-width: 640px; margin-bottom: 8px; }
@@ -323,8 +329,9 @@ button { font: inherit; color: inherit; background: none; border: 0; padding: 0;
 .bheat { display: flex; align-items: center; gap: 4px; flex: 1 1 auto; min-height: 0; }
 .bgauge { flex: 1 1 auto; min-width: 0; height: 100%; display: flex; align-items: center; justify-content: center; }
 .bgauge .gauge { width: 100%; height: 100%; max-height: calc(var(--unit) * 1.75); }
-.hsteps { display: flex; flex-direction: column; gap: 4px; }
-.hsteps button { width: calc(var(--unit) * 0.5); height: calc(var(--unit) * 0.5); border: 1px solid rgba(255,255,255,.6); color: #fff; font-size: 20px; line-height: 1; display: inline-flex; align-items: center; justify-content: center; }
+.hsteps { display: flex; flex-direction: column; gap: 4px; align-self: stretch; justify-content: center; }
+.hsteps button { flex: 1 1 0; max-height: 56px; width: max(32px, calc(var(--unit) * 0.5)); min-height: calc(var(--unit) * 0.5); position: relative; border: 1px solid rgba(255,255,255,.6); color: #fff; font-size: 20px; line-height: 1; display: inline-flex; align-items: center; justify-content: center; }
+.hsteps button::before { content: ''; position: absolute; inset: -2px -6px; }
 .hsteps button:active { background: rgba(255,255,255,.25); }
 .tile.wide .bbody:has(.bheat) { flex-direction: row; align-items: stretch; }
 .tile.wide .bbody:has(.bheat) .bheat { flex: 0 0 46%; }
@@ -368,7 +375,7 @@ button { font: inherit; color: inherit; background: none; border: 0; padding: 0;
 .ghead small { float: right; color: var(--fg2); font-size: 12px; }
 .ppage .ghead:first-child { margin-top: 4px; }
 .ptools { display: flex; gap: 8px; align-items: center; max-width: 560px; } /* as wide as the rows under it */
-.ptools .search { margin: 2px 0 10px; }
+.ptools .search { margin: 2px 0 10px; flex: 1 1 auto; min-width: 0; }
 .pbtn { flex: 0 0 auto; white-space: nowrap; border: 2px solid var(--fg); padding: 7px 12px; font-size: 15px; margin-bottom: 8px; }
 .mini { flex: 0 0 auto; border: 2px solid var(--line); padding: 4px 10px; font-size: 14px; margin-left: 6px; }
 .mini.on { background: var(--accent); border-color: var(--accent); color: #fff; }
@@ -459,6 +466,7 @@ button { font: inherit; color: inherit; background: none; border: 0; padding: 0;
 .caltime { flex: 0 0 96px; font-size: 14px; color: var(--fg2); }
 .calmhead { display: flex; align-items: center; justify-content: space-between; margin: 4px 0 8px; font-size: 22px; font-weight: 300; text-transform: lowercase; }
 .calmhead button { width: 44px; height: 44px; font-size: 26px; color: var(--fg2); }
+.calmonth { touch-action: pan-y; }
 .calgrid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 3px; }
 .calwd { text-align: center; font-size: 12px; color: var(--fg2); padding-bottom: 2px; }
 .calcell { aspect-ratio: 1; min-height: 40px; display: flex; flex-direction: column; justify-content: space-between; align-items: flex-start; padding: 4px 5px; background: color-mix(in srgb, var(--fg) 6%, transparent); text-align: left; }
@@ -482,4 +490,35 @@ button { font: inherit; color: inherit; background: none; border: 0; padding: 0;
 .caltimes { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 .caltimes[hidden] { display: none; }
 .formbtns { margin-top: 10px; }
+
+/* --- phones: everything a thumb has to hit is at least about 44 px ---------- */
+.root:not(.desk) .hub { gap: 0; padding: 2px calc(var(--pad) - 8px) 0; }
+.root:not(.desk) .hub button { font-size: 22px; padding: 10px 8px 8px; }
+.root:not(.desk) .back { width: 44px; height: 44px; }
+.root:not(.desk) .apptitle { gap: 10px; padding-top: 8px; }
+.root:not(.desk) .app.intab .pivots button { padding: 8px 0; }
+.root:not(.desk) .planmodes { gap: 2px; margin: 0 0 2px -8px; }
+.root:not(.desk) .planmodes button { padding: 12px 8px 10px; }
+.root:not(.desk) .planmodes button.on { border-bottom: 0; box-shadow: inset 0 -2px 0 var(--accent); }
+.root:not(.desk) .housebar { flex-wrap: nowrap; align-items: center; gap: 4px; }
+.root:not(.desk) .housebar .link { padding: 12px 6px; white-space: nowrap; }
+.root:not(.desk) .sketchnote { display: none; }
+.root:not(.desk) .whochip { padding: 10px 12px; font-size: 14px; }
+.root:not(.desk) .wholist { padding-bottom: env(safe-area-inset-bottom); }
+/* Many calendars: one row to slide along, not five rows of chips. */
+.root:not(.desk) .calchips { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; margin-right: calc(var(--pad) * -1); padding-right: var(--pad); }
+.root:not(.desk) .calchips::-webkit-scrollbar { display: none; }
+.root:not(.desk) .calchip { flex: 0 0 auto; padding: 10px 12px; font-size: 14px; }
+.root:not(.desk) .pbtn { min-height: 44px; padding: 9px 14px; }
+.root:not(.desk) .calmhead button { width: 48px; height: 48px; }
+.root:not(.desk) .calform .check { min-height: 44px; font-size: 17px; }
+.root:not(.desk) .calform .check input { width: 24px; height: 24px; }
+.root:not(.desk) .formbtns .pbtn { width: 100%; }
+.root:not(.desk) .field input, .root:not(.desk) .field select { min-height: 44px; }
+.root:not(.desk) .link { padding: 10px 0; }
+.ppage, .app.calendar, .plist { overscroll-behavior-y: contain; }
+.ppage { padding-bottom: calc(40px + env(safe-area-inset-bottom)); }
+.calbar, .calchips { flex: 0 0 auto; }
+.root:not(.desk) .housebar .link { margin: 0; align-self: center; position: static; }
+.root:not(.desk) .listmodes button { padding: 8px 0; }
 `;
