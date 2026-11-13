@@ -438,7 +438,8 @@ export const energyMethods = {
     const missing = c.missing.map((m) => {
       const where = m.area && areas[m.area] ? areas[m.area].name : 'no room';
       let act = '';
-      if (m.like) act = `<p class="esub">It reads the same as <b>${esc(m.like)}</b>, which is counted: probably the same plug through a second integration. Leave it out.</p>`;
+      if (m.like && m.pair) act = `<p class="esub">It adds up to <b>${esc(m.like)}</b>, which are counted: one machine on two feeds, most likely. Leave it out.</p>`;
+      else if (m.like) act = `<p class="esub">It reads the same as <b>${esc(m.like)}</b>, which is counted: probably the same plug through a second integration. Leave it out.</p>`;
       else if (m.replaces) act = `<p class="esub">In the same room as <b>${esc(m.replaces)}</b>, whose sensors have stopped. If it is that one's new plug, swap it in above, so what is set inside ${esc(m.replaces)} moves with it.</p>`;
       else if (!m.energy) act = '<p class="esub">It only reports power. Home Assistant needs an energy sensor to count it: add an <i>Integral</i> helper (Settings → Helpers) on this power sensor, then add that to the Energy dashboard.</p>';
       if (can && m.energy && !m.like && !m.replaces) act += `<div class="ecact"><label class="esub">inside <select data-ecin="${esc(m.key)}"><option value="">nothing</option>${insideOpts}</select></label><button class="pbtn" data-ecadd="${esc(m.key)}">add to the Energy dashboard</button></div>`;

@@ -274,7 +274,8 @@ const areasOf = (hass, ids) => new Set(ids.map((id) => id && areaOf(hass, id)).f
 // missing: things using power that nothing in the Energy dashboard counts,
 // with the energy sensor to count them by (or none: power only), and `like`
 // when their reading is the same as something already counted (two
-// integrations for one plug, most likely).
+// integrations for one plug, most likely), or (`pair`) two counted things
+// together (one machine on two feeds).
 // today: kWh today by statistic id (the counted devices' and the candidates'
 // energy counters), when known; a pair adding up to a candidate is only
 // trusted on that, not on a passing moment's watts. before: the same for
@@ -370,12 +371,12 @@ export function energyCheck(hass, prefs, today = null, before = null) {
       const fits = [];
       kwh.forEach((a, i) => {
         fits.push({ off: score([a]), name: a.name });
-        for (let j = i + 1; j < kwh.length; j++) fits.push({ off: score([a, kwh[j]]), name: `${a.name} and ${kwh[j].name} together` });
+        for (let j = i + 1; j < kwh.length; j++) fits.push({ off: score([a, kwh[j]]), name: `${a.name} and ${kwh[j].name} together`, pair: true });
       });
       fits.sort((x, y) => x.off - y.off);
-      if (fits[0] && fits[0].off <= 1 && (!fits[1] || fits[1].off >= fits[0].off * 3 + 1)) like = { name: fits[0].name };
+      if (fits[0] && fits[0].off <= 1 && (!fits[1] || fits[1].off >= fits[0].off * 3 + 1)) like = fits[0];
     }
-    by.set(key, { key, name: (device && (device.name_by_user || device.name)) || nameOf(hass, id), power: id, energy, w, area: area ? area.area_id : null, like: like ? like.name : null, replaces: null });
+    by.set(key, { key, name: (device && (device.name_by_user || device.name)) || nameOf(hass, id), power: id, energy, w, area: area ? area.area_id : null, like: like ? like.name : null, pair: !!(like && like.pair), replaces: null });
   }
   const missing = [...by.values()].sort((a, b) => (a.like ? 1 : 0) - (b.like ? 1 : 0) || b.w - a.w);
   // What could take a broken entry's place, and the likeliest.
