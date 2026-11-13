@@ -248,7 +248,10 @@ const devOf = (hass, id) => (hass.entities && hass.entities[id] && hass.entities
 // with the energy sensor to count them by (or none: power only), and `like`
 // when their reading is the same as something already counted (two
 // integrations for one plug, most likely).
-export function energyCheck(hass, prefs) {
+// today: kWh today by statistic id (the counted devices' and the candidates'
+// energy counters), when known; a pair adding up to a candidate is only
+// trusted on that, not on a passing moment's watts.
+export function energyCheck(hass, prefs, today = null) {
   const problems = [];
   const used = new Set();
   const src = energySources(prefs);
@@ -262,7 +265,7 @@ export function energyCheck(hass, prefs) {
       const st = hass.states[d.stat_rate];
       if (!st) problems.push({ name, id: d.stat_rate, why: 'its power sensor is gone (renamed or removed), so it reads nothing now' });
       else if (st.state === 'unavailable') problems.push({ name, id: d.stat_rate, why: 'its power sensor is unavailable' });
-      else tracked.push({ name, w: watts(hass, d.stat_rate) });
+      else tracked.push({ name, w: watts(hass, d.stat_rate), key: d.stat_consumption });
     }
     if (/^sensor\./.test(d.stat_consumption) && !hass.states[d.stat_consumption]) problems.push({ name, id: d.stat_consumption, why: 'its energy sensor is gone, so it counts nothing new' });
   }
@@ -287,12 +290,17 @@ export function energyCheck(hass, prefs) {
     const device = dev && hass.devices ? hass.devices[dev] : null;
     const area = areaOf(hass, id);
     // The same reading as something counted (one plug, two integrations),
-    // or as two counted things together (a server and its two supplies).
+    // or the same energy today as two counted things together (a server and
+    // its two supplies).
     const near = (v) => Math.abs(v - w) < Math.max(0.15, w * 0.005);
     let like = w > 1 ? tracked.find((t) => t.w !== null && near(t.w)) : null;
-    if (!like && w > 1) {
-      for (let i = 0; i < tracked.length && !like; i++) for (let j = i + 1; j < tracked.length && !like; j++) {
-        if (tracked[i].w > 0.5 && tracked[j].w > 0.5 && near(tracked[i].w + tracked[j].w)) like = { name: `${tracked[i].name} and ${tracked[j].name} together` };
+    const mine = today && energy ? today[energy] : null;
+    if (!like && mine > 0.2) {
+      const kwh = tracked.map((t) => ({ ...t, kwh: today[t.key] })).filter((t) => t.kwh > 0.05);
+      const same = (v) => Math.abs(v - mine) <= mine * 0.01;
+      like = kwh.find((t) => same(t.kwh)) || null;
+      for (let i = 0; i < kwh.length && !like; i++) for (let j = i + 1; j < kwh.length && !like; j++) {
+        if (same(kwh[i].kwh + kwh[j].kwh)) like = { name: `${kwh[i].name} and ${kwh[j].name} together` };
       }
     }
     by.set(key, { key, name: (device && (device.name_by_user || device.name)) || nameOf(hass, id), power: id, energy, w, area: area ? area.area_id : null, like: like ? like.name : null });

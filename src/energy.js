@@ -142,6 +142,12 @@ export const energyMethods = {
       this._energyPower = power ? { ids: powers, rows: power } : null;
       this._energyStatsAt = Date.now();
       this._energyStatsDay = now.toDateString();
+      // The check's candidates: their energy today, to tell a duplicate.
+      const cands = energyCheck(hass, prefs).missing.map((m) => m.energy).filter(Boolean);
+      const extra = cands.length ? await ask({ start_time: today.toISOString(), statistic_ids: cands, period: 'hour', types: ['change'], units: { energy: 'kWh' } }) : null;
+      const totals = {};
+      for (const src2 of [this._energyStatsData, extra]) for (const [id, rows] of Object.entries(src2 || {})) totals[id] = statTotal({ [id]: rows }, [id]);
+      this._energyTotals = totals;
     } finally {
       this._energyStatsBusy = false;
     }
@@ -368,7 +374,7 @@ export const energyMethods = {
   // What the Energy dashboard is missing, or has lost.
   _etCheck() {
     if (!this._energyPrefs) return '';
-    const c = energyCheck(this._hass, this._energyPrefs);
+    const c = energyCheck(this._hass, this._energyPrefs, this._energyTotals);
     const n = c.problems.length + c.missing.length;
     const body = n
       ? `<div class="ebig ecount">${n}<small>to look at</small></div><div class="esub eline1">${c.problems.length ? `${c.problems.length} not working` : ''}${c.problems.length && c.missing.length ? ' · ' : ''}${c.missing.length ? `${c.missing.length} not counted` : ''} →</div>`
@@ -399,7 +405,7 @@ export const energyMethods = {
     const page = this.shadowRoot.querySelector('.echeckpage');
     if (!page) return;
     const hass = this._hass;
-    const c = energyCheck(hass, this._energyPrefs);
+    const c = energyCheck(hass, this._energyPrefs, this._energyTotals);
     const can = this._canEdit();
     const areas = hass.areas || {};
     const problems = c.problems.map((p) => `<div class="placerow"><div class="placehead"><span class="ename">${esc(p.name)}</span></div><small class="eid">${esc(p.id)}</small><p class="esub">${esc(p.why[0].toUpperCase() + p.why.slice(1))}. Fix it in Home Assistant's Energy dashboard settings.</p></div>`).join('');
@@ -419,7 +425,7 @@ export const energyMethods = {
 
   async _energyAdd(key) {
     const hass = this._hass;
-    const m = energyCheck(hass, this._energyPrefs).missing.find((x) => x.key === key);
+    const m = energyCheck(hass, this._energyPrefs, this._energyTotals).missing.find((x) => x.key === key);
     if (!m || !m.energy) return;
     this._ask({ title: `Count ${m.name}?`, text: `Adds it to Home Assistant's Energy dashboard as a device, counted by ${m.energy}${m.power ? `, its power from ${m.power}` : ''}.`, yes: 'add', then: async () => {
       try {

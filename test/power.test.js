@@ -239,7 +239,9 @@ test('the energy check: what is broken, and what nothing counts', () => {
     { stat_consumption: 'sensor.psu_a_energy', name: 'PSU A', stat_rate: 'sensor.psu_a_power' },
     { stat_consumption: 'sensor.psu_b_energy', name: 'PSU B', stat_rate: 'sensor.psu_b_power' },
   ] };
-  const c = energyCheck({ states, entities, devices }, prefs);
+  const now = energyCheck({ states, entities, devices }, prefs);
+  assert.equal(now.missing.find((m) => m.name === 'r620').like, null, "a moment's watts adding up proves nothing");
+  const c = energyCheck({ states, entities, devices }, prefs, { 'sensor.psu_a_energy': 1.1947, 'sensor.psu_b_energy': 1.1947, 'sensor.r620_power_usage_energy': 2.3894, 'sensor.fridge_energy': 0.9 });
   assert.deepEqual(c.problems.map((p) => [p.name, p.id]), [['Bio Stuff', 'sensor.smart_plug_power']]);
   assert.deepEqual(c.missing.map((m) => [m.name, m.energy, m.like]), [['fridge', 'sensor.fridge_energy', null], ['bio', null, null], ['r620', 'sensor.r620_power_usage_energy', 'PSU A and PSU B together'], ['pool', 'sensor.airfry_total_energy', 'Bio Amp']]);
   const list = withDevice(prefs, { energy: 'sensor.fridge_energy', power: 'sensor.fridge_power', name: 'Fridge' });
