@@ -307,6 +307,35 @@ test("a replaced plug: its twin's counter found, and swapped in with what is ins
   assert.deepEqual(withDevice(swapped, { energy: 'sensor.x_energy', name: 'X', inside: 'sensor.bio_leds_total_energy' }).at(-1), { stat_consumption: 'sensor.x_energy', name: 'X', included_in_stat: 'sensor.bio_leds_total_energy' });
 });
 
+test('a pair adding up is trusted on two days, not one', () => {
+  const states = {};
+  const entities = {};
+  const s = (id, state, attrs, dev = null) => {
+    states[id] = { state, attributes: attrs };
+    entities[id] = { device_id: dev };
+  };
+  const P = { device_class: 'power', unit_of_measurement: 'W', state_class: 'measurement' };
+  const E = { device_class: 'energy', unit_of_measurement: 'kWh', state_class: 'total_increasing' };
+  s('sensor.hem_power', '81', P, 'hem');
+  s('sensor.bio_power', '81', P, 'biopsu');
+  s('sensor.heater_power', '400', P, 'heater');
+  s('sensor.r620_power_usage', '162', P, 'r620');
+  s('sensor.r620_power_usage_energy', '86', E);
+  const prefs = { device_consumption: [
+    { stat_consumption: 'sensor.hem_energy', name: 'Server PSU (Hem)', stat_rate: 'sensor.hem_power' },
+    { stat_consumption: 'sensor.bio_energy', name: 'Server PSU (Bio)', stat_rate: 'sensor.bio_power' },
+    { stat_consumption: 'sensor.heater_energy', name: 'Heater', stat_rate: 'sensor.heater_power' },
+  ] };
+  // GamlaBio, 13 Nov afternoon: the supplies are exact, but a heater's day
+  // comes near one supply's, so "Hem and Heater" is near too.
+  const today = { 'sensor.r620_power_usage_energy': 2.6975, 'sensor.hem_energy': 1.3488, 'sensor.bio_energy': 1.3488, 'sensor.heater_energy': 1.3500 };
+  const yesterday = { 'sensor.r620_power_usage_energy': 3.889, 'sensor.hem_energy': 1.9446, 'sensor.bio_energy': 1.9447, 'sensor.heater_energy': 6.2 };
+  const r620 = (...days) => energyCheck({ states, entities, devices: {} }, prefs, ...days).missing.find((m) => m.power === 'sensor.r620_power_usage').like;
+  assert.equal(r620(today), null, 'one day: too close to call');
+  assert.equal(r620(today, yesterday), 'Server PSU (Hem) and Server PSU (Bio) together');
+  assert.equal(r620(today, { ...yesterday, 'sensor.r620_power_usage_energy': 3.5 }), null, "yesterday's not adding up undoes it");
+});
+
 test("a dial's top is a round number above the reading", () => {
   assert.deepEqual([niceMax(1890), niceMax(2100), niceMax(240), niceMax(5250), niceMax(0)], [2000, 2500, 250, 6000, 1]);
 });

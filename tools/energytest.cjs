@@ -77,7 +77,7 @@ const URL = (process.env.URL || 'http://127.0.0.1:18766/tools/harness/') + '?bar
   ]);
   const why = await ev(() => window.card.shadowRoot.querySelector('.echeckpage .placerow').innerText);
   assert.match(why, /power sensor is gone.*counted nothing today/s);
-  assert.match(why, /Lamp plug, in the same room, isn't counted and reads 41 W/);
+  assert.match(why, /Lamp plug is in the same room and isn't counted \(41 W now\)/);
   assert.equal(await ev(() => window.card.shadowRoot.querySelector('select[data-ecpick]').value), 'lamp_local');
   await page.screenshot({ path: `${OUT}/energy-check.png` });
   const confirm = async (word) => {

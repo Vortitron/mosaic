@@ -277,8 +277,9 @@ const areasOf = (hass, ids) => new Set(ids.map((id) => id && areaOf(hass, id)).f
 // integrations for one plug, most likely).
 // today: kWh today by statistic id (the counted devices' and the candidates'
 // energy counters), when known; a pair adding up to a candidate is only
-// trusted on that, not on a passing moment's watts.
-export function energyCheck(hass, prefs, today = null) {
+// trusted on that, not on a passing moment's watts. before: the same for
+// yesterday; when known, a match has to hold on both days.
+export function energyCheck(hass, prefs, today = null, before = null) {
   const problems = [];
   const used = new Set();
   const src = energySources(prefs);
@@ -349,17 +350,23 @@ export function energyCheck(hass, prefs, today = null) {
     const mine = today && energy ? today[energy] : null;
     if (!like && mine > 0.2) {
       // The closest one or two, trusted only when they agree almost exactly
-      // and clearly better than the next closest: with twenty devices there
-      // are two hundred pairs, and some come near by chance.
-      const kwh = tracked.map((t) => ({ ...t, kwh: today[t.key] })).filter((t) => t.kwh > 0.05);
+      // and clearly better than the next closest: with thirty devices there
+      // are four hundred pairs, and on one day some come near by chance. So
+      // each is scored on every day known (its distance over what counts as
+      // exact that day), and the worst day is its score.
+      const days = [today, before].filter((d) => d && d[energy] > 0.2);
+      const kwh = tracked.filter((t) => today[t.key] > 0.05);
+      const score = (parts) => Math.max(...days.map((d) => {
+        if (parts.some((t) => typeof d[t.key] !== 'number')) return Infinity;
+        return Math.abs(parts.reduce((a, t) => a + d[t.key], 0) - d[energy]) / Math.max(0.002, d[energy] * 0.002);
+      }));
       const fits = [];
       kwh.forEach((a, i) => {
-        fits.push({ off: Math.abs(a.kwh - mine), name: a.name });
-        for (let j = i + 1; j < kwh.length; j++) fits.push({ off: Math.abs(a.kwh + kwh[j].kwh - mine), name: `${a.name} and ${kwh[j].name} together` });
+        fits.push({ off: score([a]), name: a.name });
+        for (let j = i + 1; j < kwh.length; j++) fits.push({ off: score([a, kwh[j]]), name: `${a.name} and ${kwh[j].name} together` });
       });
       fits.sort((x, y) => x.off - y.off);
-      const tight = Math.max(0.002, mine * 0.002);
-      if (fits[0] && fits[0].off <= tight && (!fits[1] || fits[1].off >= fits[0].off * 3 + tight)) like = { name: fits[0].name };
+      if (fits[0] && fits[0].off <= 1 && (!fits[1] || fits[1].off >= fits[0].off * 3 + 1)) like = { name: fits[0].name };
     }
     by.set(key, { key, name: (device && (device.name_by_user || device.name)) || nameOf(hass, id), power: id, energy, w, area: area ? area.area_id : null, like: like ? like.name : null, replaces: null });
   }
@@ -371,7 +378,8 @@ export function energyCheck(hass, prefs, today = null) {
     const d = list.find((x) => x.stat_consumption === p.key);
     p.choices = spare.map((m) => m.key);
     const rooms = areasOf(hass, [d.stat_consumption, d.stat_rate]);
-    const here = rooms.size ? spare.filter((m) => [...areasOf(hass, [m.power, m.energy])].some((a) => rooms.has(a))) : [];
+    // In the same room, and counting: today's energy moving, where known.
+    const here = rooms.size ? spare.filter((m) => [...areasOf(hass, [m.power, m.energy])].some((a) => rooms.has(a)) && (!today || !(m.energy in today) || today[m.energy] > 0)) : [];
     if (here.length === 1 && !here[0].replaces) {
       p.suggest = here[0].key;
       here[0].replaces = p.name;

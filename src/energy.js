@@ -144,10 +144,18 @@ export const energyMethods = {
       this._energyStatsDay = now.toDateString();
       // The check's candidates: their energy today, to tell a duplicate.
       const cands = energyCheck(hass, prefs).missing.map((m) => m.energy).filter(Boolean);
-      const extra = cands.length ? await ask({ start_time: today.toISOString(), statistic_ids: cands, period: 'hour', types: ['change'], units: { energy: 'kWh' } }) : null;
-      const totals = {};
-      for (const src2 of [this._energyStatsData, extra]) for (const [id, rows] of Object.entries(src2 || {})) totals[id] = statTotal({ [id]: rows }, [id]);
+      // Today's and yesterday's: a match has to hold on both days, or it is chance.
+      const extra = cands.length ? await ask({ start_time: yesterday.toISOString(), statistic_ids: cands, period: 'hour', types: ['change'], units: { energy: 'kWh' } }) : null;
+      const cut = (rows, from, to) => rows && Object.fromEntries(Object.entries(rows).map(([id, r]) => [id, r.filter((x) => tsOf(x) >= from && tsOf(x) < to)]));
+      const sum = (...sets) => {
+        const out = {};
+        for (const set of sets) for (const [id, rows] of Object.entries(set || {})) out[id] = statTotal({ [id]: rows }, [id]);
+        return out;
+      };
+      const totals = sum(this._energyStatsData, cut(extra, today.getTime(), Infinity));
+      const before = sum(this._energyYesterday, cut(extra, yesterday.getTime(), today.getTime()));
       this._energyTotals = totals;
+      this._energyTotalsBefore = before;
     } finally {
       this._energyStatsBusy = false;
     }
@@ -374,12 +382,16 @@ export const energyMethods = {
   // What the Energy dashboard is missing, or has lost.
   _etCheck() {
     if (!this._energyPrefs) return '';
-    const c = energyCheck(this._hass, this._energyPrefs, this._energyTotals);
+    const c = this._echeck();
     const n = c.problems.length + c.missing.length;
     const body = n
       ? `<div class="ebig ecount">${n}<small>to look at</small></div><div class="esub eline1">${c.problems.length ? `${c.problems.length} not working` : ''}${c.problems.length && c.missing.length ? ' · ' : ''}${c.missing.length ? `${c.missing.length} not counted` : ''} →</div>`
       : '<div class="esub">everything that uses power is counted</div>';
     return tile('check', `w2 h1${n ? ' alert' : ''}`, 'check', body, n ? ' data-echeck="" role="button" tabindex="0"' : '');
+  },
+
+  _echeck() {
+    return energyCheck(this._hass, this._energyPrefs, this._energyTotals, this._energyTotalsBefore);
   },
 
   // The check, full screen: what is broken, then what is not counted, each
@@ -407,7 +419,7 @@ export const energyMethods = {
     const page = this.shadowRoot.querySelector('.echeckpage');
     if (!page) return;
     const hass = this._hass;
-    const c = energyCheck(hass, this._energyPrefs, this._energyTotals);
+    const c = this._echeck();
     const can = this._canEdit();
     const areas = hass.areas || {};
     const byKey = new Map(c.missing.map((m) => [m.key, m]));
@@ -415,7 +427,7 @@ export const energyMethods = {
     // A broken entry: what is wrong, and (for an admin) a plug to count it by instead.
     const problems = c.problems.map((p) => {
       let act = '';
-      if (p.suggest) act = `<p class="esub"><b>${esc(byKey.get(p.suggest).name)}</b>, in the same room, isn't counted and reads ${esc(wattsText(byKey.get(p.suggest).w))}: probably its new plug, or the same plug through another integration.</p>`;
+      if (p.suggest) act = `<p class="esub"><b>${esc(byKey.get(p.suggest).name)}</b> is in the same room and isn't counted (${esc(wattsText(byKey.get(p.suggest).w))} now). If it is the new plug, or the same plug through another integration, count ${esc(p.name)} by it.</p>`;
       if (can && p.choices.length) {
         const opts = p.choices.map((k) => `<option value="${esc(k)}"${k === p.suggest ? ' selected' : ''}>${esc(byKey.get(k).name)} · ${esc(wattsText(byKey.get(k).w))}</option>`).join('');
         act += `<div class="ecact"><label class="esub">count it by <select data-ecpick="${esc(p.key)}">${p.suggest ? '' : '<option value="">choose…</option>'}${opts}</select></label><button class="pbtn" data-ecswap="${esc(p.key)}">swap</button></div>`;
@@ -427,7 +439,7 @@ export const energyMethods = {
       const where = m.area && areas[m.area] ? areas[m.area].name : 'no room';
       let act = '';
       if (m.like) act = `<p class="esub">It reads the same as <b>${esc(m.like)}</b>, which is counted: probably the same plug through a second integration. Leave it out.</p>`;
-      else if (m.replaces) act = `<p class="esub">Probably what <b>${esc(m.replaces)}</b> should count by now: swap it in above, so what is set inside ${esc(m.replaces)} moves with it.</p>`;
+      else if (m.replaces) act = `<p class="esub">In the same room as <b>${esc(m.replaces)}</b>, whose sensors have stopped. If it is that one's new plug, swap it in above, so what is set inside ${esc(m.replaces)} moves with it.</p>`;
       else if (!m.energy) act = '<p class="esub">It only reports power. Home Assistant needs an energy sensor to count it: add an <i>Integral</i> helper (Settings → Helpers) on this power sensor, then add that to the Energy dashboard.</p>';
       if (can && m.energy && !m.like && !m.replaces) act += `<div class="ecact"><label class="esub">inside <select data-ecin="${esc(m.key)}"><option value="">nothing</option>${insideOpts}</select></label><button class="pbtn" data-ecadd="${esc(m.key)}">add to the Energy dashboard</button></div>`;
       return `<div class="placerow"><div class="placehead"><span class="ename">${esc(m.name)}</span><span class="evalue">${esc(wattsText(m.w))}</span></div><small class="eid">${esc(m.power)}${m.energy ? ` · counts by ${esc(m.energy)}` : ''} · ${esc(where)}</small>${act}</div>`;
@@ -446,7 +458,7 @@ export const energyMethods = {
 
   async _energyAdd(key) {
     const hass = this._hass;
-    const m = energyCheck(hass, this._energyPrefs, this._energyTotals).missing.find((x) => x.key === key);
+    const m = this._echeck().missing.find((x) => x.key === key);
     if (!m || !m.energy) return;
     const pick = [...this.shadowRoot.querySelectorAll('select[data-ecin]')].find((x) => x.dataset.ecin === key);
     const inside = (pick && pick.value) || null;
@@ -457,7 +469,7 @@ export const energyMethods = {
   // A broken entry counted by another plug's sensors instead.
   async _energySwap(key) {
     const hass = this._hass;
-    const c = energyCheck(hass, this._energyPrefs, this._energyTotals);
+    const c = this._echeck();
     const p = c.problems.find((x) => x.key === key);
     const pick = [...this.shadowRoot.querySelectorAll('select[data-ecpick]')].find((x) => x.dataset.ecpick === key);
     const m = p && pick && c.missing.find((x) => x.key === pick.value);
