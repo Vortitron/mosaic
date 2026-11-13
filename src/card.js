@@ -46,8 +46,9 @@ import { locate } from './locator.js';
 import { gaugeSvg } from './gauge.js';
 import { calendarMethods } from './calendar.js';
 import { refreshCams, shapeOf } from './cams.js';
+import { energyMethods } from './energy.js';
 
-const VERSION = '0.7.1-beta.6';
+const VERSION = '0.7.1-beta.7';
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
 const reduced = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
 const ON = ['on', 'open', 'opening', 'unlocked', 'playing', 'home', 'heat', 'cool', 'heat_cool', 'auto', 'cleaning'];
@@ -395,6 +396,7 @@ class MosaicStart extends HTMLElement {
         </div>
         </div>
         <div class="tabpane house"></div>
+        <div class="tabpane energy"></div>
         <div class="tabpane calendar"></div>
         <div class="tabpane settings"></div>
         <div class="editbar" role="toolbar" aria-label="customise start">
@@ -479,6 +481,7 @@ class MosaicStart extends HTMLElement {
     // will have at least a sketch, so the tab is there from the start.
     const planComing = !this._planLoaded && this._hass && Object.keys(this._hass.areas || {}).length > 0;
     if ((this._plan || planComing) && this._config.show_plan !== false) tabs.push('house');
+    if (this._hasEnergy()) tabs.push('energy');
     if (this._config.show_calendar !== false && this._hass && Object.keys(this._hass.states).some((id) => id.startsWith('calendar.'))) tabs.push('calendar');
     if (this._canManage()) tabs.push('settings');
     return tabs;
@@ -511,6 +514,14 @@ class MosaicStart extends HTMLElement {
       b.classList.toggle('on', b.dataset.tab === tab);
       b.setAttribute('aria-selected', String(b.dataset.tab === tab));
     }
+    // More tabs than a phone is wide: the row slides, the chosen one in sight.
+    const hub = root.querySelector('.hub');
+    const on = hub && hub.querySelector('button.on');
+    if (on && hub.scrollWidth > hub.clientWidth) {
+      const r = hub.getBoundingClientRect();
+      const o = on.getBoundingClientRect();
+      if (o.left < r.left || o.right > r.right) hub.scrollTo({ left: hub.scrollLeft + o.left - r.left - (r.width - o.width) / 2, behavior: reduced() ? 'auto' : 'smooth' });
+    }
     this._unflip && this._unflip();
     if (tab === 'start') {
       if (again) {
@@ -521,6 +532,8 @@ class MosaicStart extends HTMLElement {
       this._wallpaper();
     } else if (tab === 'house') {
       this._fillHouse();
+    } else if (tab === 'energy') {
+      this._fillEnergy();
     } else if (tab === 'calendar') {
       this._fillCalendar();
     } else if (tab === 'settings') {
@@ -673,6 +686,8 @@ class MosaicStart extends HTMLElement {
     else this._refreshTiles();
     this._renderList();
     this._calCheck();
+    if (this._tab === 'energy') this._energyRefresh();
+    if (this._overlay && this._overlay.kind === 'unplaced') this._fillUnplaced();
     if (this._overlay && (this._overlay.kind === 'room' || this._overlay.kind === 'device')) this._renderApp();
   }
 
@@ -1886,7 +1901,7 @@ class MosaicStart extends HTMLElement {
   }
 }
 
-Object.assign(MosaicStart.prototype, settingsMethods, artMethods, planEditMethods, calendarMethods);
+Object.assign(MosaicStart.prototype, settingsMethods, artMethods, planEditMethods, calendarMethods, energyMethods);
 
 class MosaicStrategy extends HTMLElement {
   // The same settings for a whole Mosaic dashboard ("Edit dashboard").

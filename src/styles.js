@@ -171,6 +171,8 @@ button { font: inherit; color: inherit; background: none; border: 0; padding: 0;
 .rcam { position: relative; display: block; width: 100%; max-width: 520px; aspect-ratio: 16 / 9; margin: 4px 0 6px; padding: 0; overflow: hidden; background: color-mix(in srgb, var(--fg) 8%, transparent); cursor: pointer; }
 .rcam img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; display: block; }
 .campic { transition: opacity 500ms ease; }
+.camtime { position: absolute; left: 0; bottom: 0; z-index: 2; padding: 3px 7px; font-size: 12px; font-variant-numeric: tabular-nums; color: #fff; background: rgba(0,0,0,.55); pointer-events: none; }
+.camtime:empty { display: none; }
 .toggle { flex: 0 0 auto; width: 50px; height: 24px; border: 2px solid var(--fg); border-radius: 12px; position: relative; }
 /* The switch is small to look at and big to hit. */
 .toggle::before { content: ''; position: absolute; inset: -14px -10px; }
@@ -508,6 +510,43 @@ button { font: inherit; color: inherit; background: none; border: 0; padding: 0;
 .camcard small { display: block; font-size: 12px; color: var(--fg2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .camcard small b { color: var(--fg); font-weight: 400; }
 .root:not(.desk) .camcard { width: 160px; }
+
+/* The energy tab: panels side by side on a wide screen, one under another on a phone. */
+.tabpane.energy.on { overflow-y: auto; overscroll-behavior-y: contain; }
+.energypage { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 28px 40px; padding: 10px var(--pad) calc(40px + env(safe-area-inset-bottom)); align-items: start; }
+.desk .energypage { padding: 18px 16px 40px; }
+.en[hidden] { display: none; }
+.en h3 { font-size: 15px; font-weight: 400; color: var(--fg2); text-transform: lowercase; margin: 0 0 2px; }
+.ehero { font-size: 56px; font-weight: 200; line-height: 1.05; font-variant-numeric: tabular-nums; }
+.ehero small { font-size: 20px; font-weight: 300; margin-left: 6px; color: var(--fg2); }
+.esub { font-size: 13px; color: var(--fg2); margin: 2px 0; }
+.edaychart { position: relative; margin-top: 10px; }
+.edaybars { display: block; width: 100%; height: 70px; overflow: visible; }
+.edaybars .ehit { fill: transparent; }
+.edaybars .ebar { fill: var(--accent); opacity: .7; }
+.edaybars .now .ebar { opacity: 1; }
+.edaybars .past .ebar { opacity: .35; }
+@media (hover: hover) { .edaybars .ebarslot:hover .ebar { opacity: 1; } }
+.edaybars .ebase { stroke: var(--line); stroke-width: 1; vector-effect: non-scaling-stroke; }
+.eticks { position: relative; height: 16px; font-size: 11px; color: var(--fg2); font-variant-numeric: tabular-nums; }
+.eticks span { position: absolute; top: 2px; transform: translateX(-50%); }
+.erow { display: grid; grid-template-columns: 1fr auto; gap: 0 12px; width: 100%; text-align: left; padding: 7px 0 9px calc(var(--depth, 0) * 16px); font: inherit; color: var(--fg); position: relative; }
+button.erow { cursor: pointer; }
+@media (hover: hover) { button.erow:hover .ename { color: var(--accent); } }
+.erow .ename { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 15px; }
+.erow .evalue { font-size: 14px; color: var(--fg2); font-variant-numeric: tabular-nums; }
+.erow .ebarline { grid-column: 1 / -1; display: block; height: 4px; margin-top: 4px; background: color-mix(in srgb, var(--fg) 8%, transparent); }
+.erow .ebarline::before { content: ''; display: block; height: 100%; width: var(--pct); background: var(--accent); }
+.erow.child .ename { font-size: 14px; }
+.erow.quiet .ename { color: var(--fg2); }
+.erow.quiet .ebarline::before { background: color-mix(in srgb, var(--fg) 35%, transparent); }
+.unplacedpage { max-width: 620px; }
+.placerow { padding: 10px 0 12px; border-bottom: 1px solid var(--line); }
+.placehead { display: flex; justify-content: space-between; gap: 12px; font-size: 17px; }
+.placehead .evalue { color: var(--fg2); font-variant-numeric: tabular-nums; }
+.placerow .eid { display: block; color: var(--fg2); font-size: 12px; margin: 2px 0 6px; overflow-wrap: anywhere; }
+.placesel { font: inherit; font-size: 16px; padding: 8px 10px; border: 2px solid var(--line); background: var(--bg); color: var(--fg); min-height: 44px; }
+.enote { color: var(--fg2); }
 
 /* --- phones: everything a thumb has to hit is at least about 44 px ---------- */
 .root:not(.desk) .hub { gap: 0; padding: 2px calc(var(--pad) - 8px) 0; }

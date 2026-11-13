@@ -162,13 +162,17 @@ export const artMethods = {
           this._energyPrefs = p;
           this._powerAt = null;
           if (JSON.stringify(p || null) === had) return;
+          this._fillHub();
           if (this._tab === 'house' && this._plan) this._fillHouse();
           else this._refreshPlans(true);
+          if (this._tab === 'energy') this._fillEnergy();
         });
     }
-    if (this._powerAt === this._hass.states) return this._powerNow;
+    // Worked out again when a state moves, or a device or entity moves room.
+    const at = this._powerAt;
+    if (at && at.states === this._hass.states && at.entities === this._hass.entities && at.devices === this._hass.devices) return this._powerNow;
     this._powerNow = roomPower(this._hass, this._energyPrefs || null);
-    this._powerAt = this._hass.states;
+    this._powerAt = { states: this._hass.states, entities: this._hass.entities, devices: this._hass.devices };
     return this._powerNow;
   },
 
@@ -180,8 +184,8 @@ export const artMethods = {
     const rooms = [...p.rooms.entries()].filter(([a, r]) => areas[a] && r.w >= 1);
     const total = rooms.reduce((t, [, r]) => t + r.w, 0) + p.elsewhere.reduce((t, i) => t + i.w, 0);
     const chip = ([a, r]) => `<button class="whochip energy${this._findArea === a ? ' on' : ''}" data-find="${esc(a)}" title="${esc(r.items.map((i) => `${i.name}: ${wattsText(i.w)}`).join('\n'))}"><b>${esc(areas[a].name)}</b> ${esc(wattsText(r.w))}</button>`;
-    const away = p.elsewhere.filter((i) => i.w >= 1);
-    return `<div class="wholist">${rooms.map(chip).join('')}${away.length ? `<span class="whochip quiet" title="${esc(away.map((i) => `${i.name}: ${wattsText(i.w)}`).join('\n'))}"><b>not in a room</b> ${esc(wattsText(away.reduce((t, i) => t + i.w, 0)))}</span>` : ''}${total ? `<span class="whochip quiet"><b>all</b> ${esc(wattsText(total))}</span>` : ''}</div>`;
+    const away = p.elsewhere;
+    return `<div class="wholist">${rooms.map(chip).join('')}${away.length ? `<button class="whochip quiet" data-unplaced="" title="${esc(away.map((i) => `${i.name}: ${wattsText(i.w)}`).join('\n'))}"><b>not in a room</b> ${esc(wattsText(away.reduce((t, i) => t + i.w, 0)))} &rarr;</button>` : ''}${total ? `<span class="whochip quiet"><b>all</b> ${esc(wattsText(total))}</span>` : ''}</div>`;
   },
 
   // Under the plan in the cameras view: the cameras that are not in a room
@@ -363,6 +367,12 @@ export const artMethods = {
       clearTimeout(this._findTimer);
       if (this._findArea) this._findTimer = setTimeout(() => { this._findArea = null; this._whoAt = null; this._refreshPlans(true); }, 8000);
       this._refreshPlans(true);
+      return true;
+    }
+    // What uses power with no room: the page to give it one.
+    if (e.target.closest && e.target.closest('.whobox [data-unplaced]')) {
+      e.stopPropagation();
+      this._openUnplaced();
       return true;
     }
     // A camera under the plan: its live view.

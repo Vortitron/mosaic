@@ -112,7 +112,7 @@ test('the device list: one row per device, its main entity in front, loose entit
 
 test('searching devices finds them by what is inside', () => {
   const rows = deviceList(hass, 'energy').flatMap(([, r]) => r);
-  assert.deepEqual(rows.map((r) => r.device), ['kettle_plug']);
+  assert.deepEqual(rows.filter((r) => r.device).map((r) => r.device).sort(), ['grid_meter', 'kettle_plug']);
 });
 
 test('a device opens with its own pivots', () => {

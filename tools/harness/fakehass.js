@@ -60,7 +60,7 @@ export function makeFakeHass(onUpdate, { agent = 'anthropic' } = {}) {
   add('sensor.tv_plug_power', '4.2', { friendly_name: 'TV Plug Power', device_class: 'power', unit_of_measurement: 'W' }, 'living_room');
   add('sensor.desk_plug_power', '86', { friendly_name: 'Desk Plug Power', device_class: 'power', unit_of_measurement: 'W' }, 'office');
   add('sensor.heat_pump_power', '0.9', { friendly_name: 'Heat Pump Power', device_class: 'power', unit_of_measurement: 'kW' }, 'hallway');
-  add('sensor.grid_power', '1.4', { friendly_name: 'Grid Power', device_class: 'power', unit_of_measurement: 'kW' }, 'comms');
+  add('sensor.grid_power', '1.9', { friendly_name: 'Grid Power', device_class: 'power', unit_of_measurement: 'kW' }, 'comms');
   add('scene.movie', 'scening', { friendly_name: 'Movie Night' }, 'living_room');
   add('vacuum.robot', 'docked', { friendly_name: 'Robot Vacuum' }, null);
   add('weather.home', 'partlycloudy', { friendly_name: 'Home', temperature: 11.2, temperature_unit: '°C', humidity: 81, wind_speed: 14, wind_speed_unit: 'km/h' }, null);
@@ -107,6 +107,49 @@ export function makeFakeHass(onUpdate, { agent = 'anthropic' } = {}) {
   device('kettle_plug', 'Kettle', 'kitchen', ['switch.kettle', 'sensor.kettle_power', 'sensor.kettle_energy', 'sensor.kettle_signal'], { manufacturer: 'Shelly', model: 'Plug S' });
   device('kitchen_climate', 'Kitchen Climate', 'kitchen', ['sensor.kitchen_temperature', 'sensor.kitchen_humidity', 'sensor.kitchen_debug'], { manufacturer: 'Aqara' });
   device('bedroom_tv', 'Bedroom TV', 'bedroom', ['media_player.bedroom']);
+  // The Energy dashboard: a grid meter (its power beside it on the device),
+  // a price, Nord Pool's spot prices for the day, and the devices it tracks:
+  // a lamp counted inside the TV plug, a server with no room, and a heater
+  // defined in YAML (no unique ID, so no registry entry and no room to give).
+  add('sensor.grid_import_energy', '18234.5', { friendly_name: 'Meter Energy import', device_class: 'energy', unit_of_measurement: 'kWh', state_class: 'total_increasing' }, null);
+  add('sensor.grid_export_energy', '12.1', { friendly_name: 'Meter Energy export', device_class: 'energy', unit_of_measurement: 'kWh', state_class: 'total_increasing' }, null);
+  device('grid_meter', 'Meter', 'comms', ['sensor.grid_import_energy', 'sensor.grid_export_energy', 'sensor.grid_power']);
+  add('sensor.grid_import_energy_cost', '4210.2', { friendly_name: 'Meter Energy import cost', unit_of_measurement: 'SEK', device_class: 'monetary' }, null);
+  add('sensor.electricity_price', '1.85', { friendly_name: 'Electricity price', unit_of_measurement: 'SEK/kWh' }, null);
+  const spot = Array.from({ length: 24 }, (_, h) => ({ start: at(0, h).toISOString(), end: at(0, h + 1).toISOString(), value: Math.round((0.6 + 0.5 * Math.sin(((h - 5) / 24) * 2 * Math.PI) + (h >= 7 && h <= 9 ? 0.4 : 0) + (h >= 17 && h <= 19 ? 0.6 : 0)) * 1000) / 1000 }));
+  const hourNow = new Date().getHours();
+  add('sensor.nordpool_kwh_se3_sek', String(spot[hourNow].value), { friendly_name: 'Nord Pool SE3', unit_of_measurement: 'SEK/kWh', raw_today: spot, raw_tomorrow: [], tomorrow_valid: false }, null);
+  add('sensor.server_power', '112', { friendly_name: 'Server PSU Power', device_class: 'power', unit_of_measurement: 'W' }, null);
+  add('sensor.yaml_heater_power', '450', { friendly_name: 'Garage Heater Power', device_class: 'power', unit_of_measurement: 'W' }, null);
+  delete entities['sensor.yaml_heater_power'];
+  const energyPrefs = {
+    energy_sources: [{ type: 'grid', stat_energy_from: 'sensor.grid_import_energy', stat_energy_to: 'sensor.grid_export_energy', entity_energy_price: 'sensor.electricity_price', number_energy_price: null, stat_cost: null, cost_adjustment_day: 0 }],
+    device_consumption: [
+      { stat_consumption: 'sensor.heat_pump_energy', name: 'Heat pump', stat_rate: 'sensor.heat_pump_power' },
+      { stat_consumption: 'sensor.desk_plug_energy', name: 'Desk', stat_rate: 'sensor.desk_plug_power' },
+      { stat_consumption: 'sensor.tv_plug_energy', name: 'TV and things', stat_rate: 'sensor.tv_plug_power' },
+      { stat_consumption: 'sensor.sofa_lamp_energy', name: 'Sofa lamp', included_in_stat: 'sensor.tv_plug_energy' },
+      { stat_consumption: 'sensor.kettle_energy', name: 'Kettle', stat_rate: 'sensor.kettle_power' },
+      { stat_consumption: 'sensor.server_energy', name: 'Server PSU', stat_rate: 'sensor.server_power' },
+      { stat_consumption: 'sensor.garage_heater_energy', name: 'Garage heater', stat_rate: 'sensor.yaml_heater_power' },
+    ],
+  };
+  // Today's hourly statistics, as the recorder keeps them.
+  const perHour = { 'sensor.grid_import_energy': [0.6, 0.5, 0.5, 0.5, 0.6, 0.8, 1.4, 2.1, 1.6, 1.0, 0.9, 0.9, 1.1, 0.9, 0.8, 0.9, 1.2, 2.4, 2.6, 2.0, 1.5, 1.1, 0.9, 0.7], 'sensor.heat_pump_energy': 0.45, 'sensor.desk_plug_energy': 0.06, 'sensor.tv_plug_energy': 0.05, 'sensor.sofa_lamp_energy': 0.01, 'sensor.kettle_energy': 0.04, 'sensor.server_energy': 0.11, 'sensor.garage_heater_energy': 0.3 };
+  const statsToday = (ids) => {
+    const out = {};
+    for (const id of ids) {
+      const base = id.endsWith('_cost') ? perHour['sensor.grid_import_energy'] : perHour[id];
+      if (base === undefined) continue;
+      out[id] = Array.from({ length: hourNow + 1 }, (_, h) => {
+        let v = Array.isArray(base) ? base[h] : base;
+        if (id.endsWith('_cost')) v *= 1.4 + spot[h].value;
+        if (h === hourNow) v *= new Date().getMinutes() / 60;
+        return { start: at(0, h).getTime(), end: at(0, h + 1).getTime(), change: Math.round(v * 1000) / 1000 };
+      });
+    }
+    return out;
+  };
   const calls = [];
   const ws = [];
   let hass;
@@ -157,6 +200,21 @@ export function makeFakeHass(onUpdate, { agent = 'anthropic' } = {}) {
       if (msg.type === 'calendar/event/delete') {
         calendarEvents[msg.entity_id] = (calendarEvents[msg.entity_id] || []).filter((e) => !(e.uid === msg.uid && (!msg.recurrence_id || e.recurrence_id === msg.recurrence_id)));
         return null;
+      }
+      if (msg.type === 'energy/get_prefs') return JSON.parse(JSON.stringify(energyPrefs));
+      if (msg.type === 'recorder/statistics_during_period') return statsToday(msg.statistic_ids);
+      if (msg.type === 'config/device_registry/update') {
+        devices[msg.device_id] = { ...devices[msg.device_id], area_id: msg.area_id };
+        hass = { ...hass, devices: { ...devices } };
+        rebuild();
+        return devices[msg.device_id];
+      }
+      if (msg.type === 'config/entity_registry/update') {
+        if (!entities[msg.entity_id]) throw { code: 'not_found', message: 'Entity not found' };
+        entities[msg.entity_id] = { ...entities[msg.entity_id], area_id: msg.area_id };
+        hass = { ...hass, entities: { ...entities } };
+        rebuild();
+        return { entity_entry: entities[msg.entity_id] };
       }
       if (msg.type === 'assist_pipeline/pipeline/list') return { preferred_pipeline: 'p1', pipelines: [{ id: 'p1', name: 'Home Assistant', conversation_engine: 'conversation.claude' }] };
       // The dashboard this card sits on: a Mosaic strategy dashboard.

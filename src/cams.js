@@ -9,6 +9,52 @@ const EVERY = 10000;
 const shown = new Map(); // entity -> the url last shown, to start a redrawn box with
 const shapes = new Map(); // entity -> width / height of its pictures
 const loading = new Map(); // url -> Promise<Image>
+const stamps = new Map(); // camera -> { fp, at, same }: when its picture last changed
+
+// A picture's fingerprint: 12 x 12 greys. Two stills of a live camera always
+// differ a little (noise); a snapshot camera serves the very same file.
+function fingerprint(img) {
+  try {
+    const c = document.createElement('canvas');
+    c.width = 12;
+    c.height = 12;
+    const g = c.getContext('2d', { willReadFrequently: true });
+    g.drawImage(img, 0, 0, 12, 12);
+    const d = g.getImageData(0, 0, 12, 12).data;
+    const out = new Uint8Array(144);
+    for (let i = 0; i < 144; i++) out[i] = (d[i * 4] * 3 + d[i * 4 + 1] * 6 + d[i * 4 + 2]) / 10;
+    return out;
+  } catch (e) {
+    return null; // another site's picture: no way to compare, so take it as new
+  }
+}
+
+export function sameShot(a, b) {
+  if (!a || !b || a.length !== b.length) return false;
+  let diff = 0;
+  for (let i = 0; i < a.length; i++) diff += Math.abs(a[i] - b[i]);
+  return diff / a.length < 0.3;
+}
+
+// "14:03:27", or "12 nov 14:03" when it is not today's.
+const MON = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
+export function stampText(stamp, now = Date.now()) {
+  if (!stamp) return '';
+  const d = new Date(stamp.at);
+  const p = (n) => String(n).padStart(2, '0');
+  const today = new Date(now).toDateString() === d.toDateString();
+  const t = today ? `${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}` : `${d.getDate()} ${MON[d.getMonth()]} ${p(d.getHours())}:${p(d.getMinutes())}`;
+  return stamp.same ? `same since ${t}` : t;
+}
+
+// A new still of a camera: did the picture change? Its time is when it did.
+export function noteShot(id, fp, at = Date.now()) {
+  const had = stamps.get(id);
+  if (had && sameShot(had.fp, fp)) had.same = true;
+  else stamps.set(id, { fp, at, same: false });
+  return stamps.get(id);
+}
+export const stampOf = (id) => stamps.get(id) || null;
 
 const domainOf = (id) => id.split('.')[0];
 
@@ -38,7 +84,10 @@ function load(url) {
   if (!loading.has(url)) {
     loading.set(url, new Promise((resolve, reject) => {
       const img = new Image();
-      img.onload = () => resolve(img);
+      img.onload = () => {
+        img.fp = fingerprint(img);
+        resolve(img);
+      };
       img.onerror = reject;
       img.src = url;
     }).finally(() => setTimeout(() => loading.delete(url), 1000)));
@@ -64,6 +113,8 @@ function swap(box, url, fade) {
   }
   pic.classList.add('campic');
   box.dataset.url = url;
+  const time = !isSvg && box.querySelector('.camtime');
+  if (time) time.textContent = stampText(stamps.get(box.dataset.cam));
   if (!fade || !old.length || old.every((o) => !(o.getAttribute('href') || o.getAttribute('src')))) {
     for (const o of old) o.remove();
     box.append(pic);
@@ -85,7 +136,15 @@ export function refreshCams(root, hass, now = Date.now()) {
     const id = box.dataset.cam;
     // Not on screen (a tab not showing): leave it until it is.
     if (!box.getClientRects().length) continue;
-    if (!(box instanceof SVGElement) && shapes.has(id)) box.style.aspectRatio = String(shapes.get(id));
+    if (!(box instanceof SVGElement)) {
+      if (shapes.has(id)) box.style.aspectRatio = String(shapes.get(id));
+      // When the picture is from: a camera's, in the corner, over it.
+      if (id.startsWith('camera.') && !box.querySelector('.camtime')) {
+        const t = document.createElement('span');
+        t.className = 'camtime';
+        box.append(t);
+      }
+    }
     // A box just drawn starts with the last picture, at once (it is cached).
     if (!box.dataset.url && shown.has(id)) swap(box, shown.get(id), false);
     const url = camUrl(hass, id, now);
@@ -95,6 +154,10 @@ export function refreshCams(root, hass, now = Date.now()) {
       if (box.dataset.want !== url) return;
       delete box.dataset.want;
       shown.set(id, url);
+      if (id.startsWith('camera.') && img.stampedFor !== id) {
+        img.stampedFor = id;
+        noteShot(id, img.fp);
+      }
       if (img.naturalWidth && img.naturalHeight) {
         shapes.set(id, img.naturalWidth / img.naturalHeight);
         if (!(box instanceof SVGElement)) box.style.aspectRatio = String(shapes.get(id));

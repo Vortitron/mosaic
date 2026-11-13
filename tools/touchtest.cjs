@@ -28,10 +28,17 @@ const OUT = process.argv[2] || '/tmp';
   const ev = (f, a) => page.evaluate(f, a);
   const zoom = () => ev(() => window.card._zoom.get());
 
-  // The four tabs fit a 360 px phone.
+  // The tabs: thumb height, and a row that slides rather than widening the page.
   const hub = await ev(() => { const b = [...window.card.shadowRoot.querySelectorAll('.hub button')]; return { right: Math.round(b[b.length - 1].getBoundingClientRect().right), h: Math.round(b[0].getBoundingClientRect().height) }; });
   console.log('tabs end at', hub.right, 'px, height', hub.h);
-  assert.ok(hub.right <= 360 && hub.h >= 40, 'tabs fit and are thumb height');
+  assert.ok(hub.h >= 40, 'tabs are thumb height');
+  assert.ok(await ev(() => document.documentElement.scrollWidth) <= 360, 'the page never scrolls sideways');
+  await ev(() => window.card._goTab('settings'));
+  await page.waitForTimeout(600);
+  const seen = await ev(() => { const b = window.card.shadowRoot.querySelector('.hub button.on').getBoundingClientRect(); return [Math.round(b.left), Math.round(b.right)]; });
+  console.log('settings tab shown at', seen.join('–'));
+  assert.ok(seen[0] >= 0 && seen[1] <= 360, 'the chosen tab slides into view');
+  await ev(() => window.card._goTab('start'));
 
   await ev(() => window.card._goTab('house'));
   await page.waitForFunction(() => window.card.shadowRoot.querySelector('.planzoom svg.plan'));
