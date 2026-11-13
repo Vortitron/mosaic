@@ -500,6 +500,14 @@ button { font: inherit; color: inherit; background: none; border: 0; padding: 0;
 .plan .room .camtile > rect.camback { fill: rgba(0,0,0,.55); }
 .plan .room.pictured text { pointer-events: none; }
 .whochip.energy b { font-weight: 600; }
+/* Cameras not in a room on the plan: a row of stills under it. */
+.camstrip { display: flex; gap: 10px; overflow-x: auto; scrollbar-width: none; padding-top: 8px; }
+.camstrip::-webkit-scrollbar { display: none; }
+.camcard { flex: 0 0 auto; width: 220px; text-align: left; padding: 0; }
+.camcard .rcam { margin: 0 0 4px; max-width: none; pointer-events: none; }
+.camcard small { display: block; font-size: 12px; color: var(--fg2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.camcard small b { color: var(--fg); font-weight: 400; }
+.root:not(.desk) .camcard { width: 160px; }
 
 /* --- phones: everything a thumb has to hit is at least about 44 px ---------- */
 .root:not(.desk) .hub { gap: 0; padding: 2px calc(var(--pad) - 8px) 0; }

@@ -35,6 +35,12 @@ const URL = (process.env.URL || 'http://127.0.0.1:18766/tools/harness/') + '?bar
   console.log('pictures on the plan:', JSON.stringify(tiles));
   assert.deepEqual(tiles.map((t) => t[0]).sort(), ['camera.front_door', 'camera.garden', 'media_player.living_room']);
   assert.ok(tiles.every((t) => t[1]), 'each picture loaded');
+  // A camera with no room on the plan: in the row under it, tap for the live view.
+  const strip = await ev(() => [...window.card.shadowRoot.querySelectorAll('.whobox .camcard')].map((c) => [c.dataset.more, !!c.querySelector('img')]));
+  console.log('under the plan:', JSON.stringify(strip));
+  assert.deepEqual(strip, [['camera.driveway', true]]);
+  const asked = await ev(() => { let got = null; window.card._moreInfo = (id) => { got = id; }; window.card.shadowRoot.querySelector('.whobox .camcard').click(); delete window.card._moreInfo; return got; });
+  assert.equal(asked, 'camera.driveway');
   await page.screenshot({ path: `${OUT}/cams-plan.png` });
 
   // Energy: rooms by power; the grid meter in the comms room is not a room using power.

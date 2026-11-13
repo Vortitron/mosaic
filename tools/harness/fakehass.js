@@ -55,6 +55,7 @@ export function makeFakeHass(onUpdate, { agent = 'anthropic' } = {}) {
   add('media_player.living_room', 'playing', { friendly_name: 'Living Room Speaker', media_title: 'Clair de Lune', media_artist: 'Debussy', entity_picture: '/tools/harness/art.svg' }, 'living_room');
   add('media_player.bedroom', 'off', { friendly_name: 'Bedroom TV' }, 'bedroom');
   add('camera.garden', 'idle', { friendly_name: 'Garden Camera', entity_picture: '/tools/harness/cam.svg?token=x' }, 'garden');
+  add('camera.driveway', 'idle', { friendly_name: 'Driveway Camera', entity_picture: '/tools/harness/cam.svg?token=z' }, null);
   add('camera.front_door', 'idle', { friendly_name: 'Front Door Camera', entity_picture: '/tools/harness/cam.svg?token=y' }, 'hallway');
   add('sensor.tv_plug_power', '4.2', { friendly_name: 'TV Plug Power', device_class: 'power', unit_of_measurement: 'W' }, 'living_room');
   add('sensor.desk_plug_power', '86', { friendly_name: 'Desk Plug Power', device_class: 'power', unit_of_measurement: 'W' }, 'office');

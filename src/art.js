@@ -3,11 +3,11 @@
 // where there is no plan. Mixed into the card like the settings.
 
 import { areaOfRoom, bbox, levelSvg, planLevels, stackSvg, validPlan } from './plan.js';
-import { areaClimate, entitiesByArea, guessAreaIcon } from './model.js';
+import { areaClimate, areaOf, entitiesByArea, guessAreaIcon, nameOf } from './model.js';
 import { PLAN_MODES } from './plan.js';
 import { findPeople, findThings, initials, locate } from './locator.js';
 import { attachZoom } from './zoom.js';
-import { picturesOf, refreshCams } from './cams.js';
+import { camUrl, picturesOf, refreshCams, shapeOf } from './cams.js';
 import { roomPower, wattsText } from './power.js';
 
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
@@ -124,7 +124,8 @@ export const artMethods = {
     const has = (k) => areas.some((a) => areaClimate(hass, a)[k] !== null);
     const people = () => { const p = findPeople(hass); return p.length || findThings(hass, p).length; };
     const byArea = entitiesByArea(hass);
-    const cameras = () => areas.some((a) => (byArea.get(a.area_id) || []).some((id) => id.startsWith('camera.') || (id.startsWith('media_player.') && hass.states[id].state !== 'unavailable')));
+    const cameras = () => Object.keys(hass.states).some((id) => id.startsWith('camera.') && hass.states[id].state !== 'unavailable')
+      || areas.some((a) => (byArea.get(a.area_id) || []).some((id) => id.startsWith('media_player.') && hass.states[id].state !== 'unavailable'));
     const offer = { lights: () => true, people, temperature: () => has('temp'), humidity: () => has('hum'), cameras, energy: () => this._power().rooms.size > 0 };
     const modes = PLAN_MODES.filter((m) => offer[m]());
     if (modes.length < 2) return '';
@@ -183,9 +184,24 @@ export const artMethods = {
     return `<div class="wholist">${rooms.map(chip).join('')}${away.length ? `<span class="whochip quiet" title="${esc(away.map((i) => `${i.name}: ${wattsText(i.w)}`).join('\n'))}"><b>not in a room</b> ${esc(wattsText(away.reduce((t, i) => t + i.w, 0)))}</span>` : ''}${total ? `<span class="whochip quiet"><b>all</b> ${esc(wattsText(total))}</span>` : ''}</div>`;
   },
 
+  // Under the plan in the cameras view: the cameras that are not in a room
+  // drawn on it (no room, or a room the plan leaves out), so none is lost.
+  _camStripHtml() {
+    const hass = this._hass;
+    const drawn = new Set(this._levels().flatMap((l) => l.rooms.map((r) => { const a = areaOfRoom(hass, r); return a && a.area_id; })).filter(Boolean));
+    const ids = Object.keys(hass.states).filter((id) => {
+      if (!id.startsWith('camera.') || !camUrl(hass, id)) return false;
+      const a = areaOf(hass, id);
+      return !a || !drawn.has(a.area_id);
+    }).sort();
+    if (!ids.length) return '';
+    return `<div class="camstrip">${ids.map((id) => { const a = areaOf(hass, id); return `<button class="camcard" data-more="${esc(id)}" aria-label="${esc(nameOf(hass, id))}: live view"><span class="rcam" data-cam="${esc(id)}" style="aspect-ratio:${shapeOf(id)}"></span><small><b>${esc(nameOf(hass, id))}</b>${a ? ` · ${esc(a.name)}` : ''}</small></button>`; }).join('')}</div>`;
+  },
+
   // Under the plan in the people view: everyone and everything, and where; tap to find.
   _whoListHtml() {
     if (this._planMode() === 'energy') return this._energyListHtml();
+    if (this._planMode() === 'cameras') return this._camStripHtml();
     if (this._planMode() !== 'people') return '';
     const who = this._whoNow();
     const areas = this._hass.areas || {};
@@ -347,6 +363,13 @@ export const artMethods = {
       clearTimeout(this._findTimer);
       if (this._findArea) this._findTimer = setTimeout(() => { this._findArea = null; this._whoAt = null; this._refreshPlans(true); }, 8000);
       this._refreshPlans(true);
+      return true;
+    }
+    // A camera under the plan: its live view.
+    const more = e.target.closest && e.target.closest('.whobox [data-more]');
+    if (more) {
+      e.stopPropagation();
+      this._moreInfo(more.dataset.more);
       return true;
     }
     const mode = e.target.closest && e.target.closest('.planmodes button');

@@ -47,7 +47,7 @@ import { gaugeSvg } from './gauge.js';
 import { calendarMethods } from './calendar.js';
 import { refreshCams, shapeOf } from './cams.js';
 
-const VERSION = '0.7.1-beta.5';
+const VERSION = '0.7.1-beta.6';
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
 const reduced = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
 const ON = ['on', 'open', 'opening', 'unlocked', 'playing', 'home', 'heat', 'cool', 'heat_cool', 'auto', 'cleaning'];
@@ -1155,9 +1155,15 @@ class MosaicStart extends HTMLElement {
     let to;
     if (overTile && overTile.dataset.key !== e.sel) to = this._specAt(overTile.dataset.key);
     else if (!overTile && under.closest('.group')) {
-      // Anywhere else on a group (its name, the space beside its tiles): last there.
-      const gi = Number(under.closest('.group').dataset.g);
-      if (gi !== g || t !== e.groups[gi].tiles.length - 1) to = [gi, e.groups[gi].tiles.length];
+      // Past a group's last tile (below it, or beside it on its row): last
+      // there. The gutter between two tiles is not "past": crossing it on
+      // the way to a tile must not throw the tile to the end.
+      const group = under.closest('.group');
+      const gi = Number(group.dataset.g);
+      const tiles = group.querySelectorAll('.tile');
+      const last = tiles.length ? tiles[tiles.length - 1].getBoundingClientRect() : null;
+      const past = !last || y > last.bottom || (y >= last.top && x > last.right);
+      if (past && (gi !== g || t !== e.groups[gi].tiles.length - 1)) to = [gi, e.groups[gi].tiles.length];
     }
     if (!to) return;
     const [spec] = e.groups[g].tiles.splice(t, 1);
