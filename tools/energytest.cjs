@@ -33,7 +33,7 @@ const URL = (process.env.URL || 'http://127.0.0.1:18766/tools/harness/') + '?bar
   assert.match(tiles.today, /kWh from the grid [\d.]+\s?SEK [▲▼] \d+% on yesterday by now/);
   assert.match(tiles.days, /7 days [\d.]+ kWh \d+ SEK 30 days/);
   assert.match(tiles.rooms, /Hallway 900 W.*not in a room 562 W/);
-  assert.match(tiles.check, /4 to look at 1 not working · 3 not counted/);
+  assert.match(tiles.check, /5 to look at 1 not working · 4 not counted/);
   const shape = await ev(() => ({
     dials: window.card.shadowRoot.querySelectorAll('.etile .edial svg.gauge').length,
     hours: window.card.shadowRoot.querySelectorAll('[data-tile="hours"] .eslot').length,
@@ -59,23 +59,57 @@ const URL = (process.env.URL || 'http://127.0.0.1:18766/tools/harness/') + '?bar
   await page.mouse.move(5, 5);
   await page.screenshot({ path: `${OUT}/energy-tab.png` });
 
-  // The check: the renamed lamp sensor; the fridge can be added, the dehumidifier
-  // has no energy sensor; the desk plug's second integration is left out.
+  // The check: the old lamp's plug replaced (its power gone, its counter
+  // stopped), the new plug seen twice and in the same room, so offered as its
+  // replacement; the fridge can be added, the dehumidifier has no energy
+  // sensor; the desk plug's second integration is left out.
   await ev(() => window.card.shadowRoot.querySelector('[data-echeck]').click());
   await page.waitForTimeout(400);
-  const check = await ev(() => [...window.card.shadowRoot.querySelectorAll('.echeckpage .placerow')].map((r) => [r.querySelector('.ename').textContent, !!r.querySelector('[data-ecadd]'), r.innerText.includes('Integral'), r.innerText.includes('reads the same')]));
+  const rowsOf = () => ev(() => [...window.card.shadowRoot.querySelectorAll('.echeckpage .placerow')].map((r) => [r.querySelector('.ename').textContent, !!r.querySelector('[data-ecadd]'), !!r.querySelector('[data-ecswap]'), r.innerText.includes('Integral'), r.innerText.includes('reads the same'), r.innerText.includes('swap it in above')]));
+  const check = await rowsOf();
   console.log('check:', JSON.stringify(check));
-  assert.deepEqual(check, [['Old lamp', false, false, false], ['Dehumidifier Power', false, true, false], ['Fridge', true, false, false], ['Desk Plug (cloud) Power', false, false, true]]);
+  assert.deepEqual(check, [
+    ['Old lamp', false, true, false, false, false],
+    ['Dehumidifier Power', false, false, true, false, false],
+    ['Fridge', true, false, false, false, false],
+    ['Lamp plug', false, false, false, false, true],
+    ['Desk Plug (cloud) Power', false, false, false, true, false],
+  ]);
+  const why = await ev(() => window.card.shadowRoot.querySelector('.echeckpage .placerow').innerText);
+  assert.match(why, /power sensor is gone.*counted nothing today/s);
+  assert.match(why, /Lamp plug, in the same room, isn't counted and reads 41 W/);
+  assert.equal(await ev(() => window.card.shadowRoot.querySelector('select[data-ecpick]').value), 'lamp_local');
   await page.screenshot({ path: `${OUT}/energy-check.png` });
+  const confirm = async (word) => {
+    await page.waitForTimeout(300);
+    const text = await ev(() => window.card.shadowRoot.querySelector('.overlay.msg .box').innerText);
+    await ev((w) => [...window.card.shadowRoot.querySelectorAll('.overlay.msg button')].find((b) => b.textContent.trim() === w).click(), word);
+    await page.waitForTimeout(800);
+    return text;
+  };
+  // Swap: the old lamp keeps its name, counted by the new plug; the reading
+  // lamp inside it moves along.
+  await ev(() => window.card.shadowRoot.querySelector('[data-ecswap="sensor.old_lamp_energy"]').click());
+  const said = await confirm('swap');
+  console.log('swap asks:', said.replace(/\s+/g, ' '));
+  const swapped = await ev(() => window.hass.ws.filter((m) => m.type === 'energy/save_prefs').at(-1).device_consumption.filter((d) => /lamp/.test(d.name)));
+  console.log('swapped:', JSON.stringify(swapped));
+  assert.deepEqual(swapped.slice(-2), [
+    { stat_consumption: 'sensor.lamp_plug_total_energy', name: 'Old lamp', stat_rate: 'sensor.lamp_plug_power' },
+    { stat_consumption: 'sensor.reading_lamp_energy', name: 'Reading lamp', included_in_stat: 'sensor.lamp_plug_total_energy' },
+  ]);
+  // The fridge, added behind the TV plug.
+  await ev(() => { const s = window.card.shadowRoot.querySelector('select[data-ecin="fridge_plug"]'); s.value = 'sensor.tv_plug_energy'; });
   await ev(() => window.card.shadowRoot.querySelector('[data-ecadd="fridge_plug"]').click());
-  await page.waitForTimeout(300);
-  await ev(() => [...window.card.shadowRoot.querySelectorAll('.layer button, .overlay button')].find((b) => b.textContent.trim() === 'add').click());
-  await page.waitForTimeout(800);
-  const saved = await ev(() => window.hass.ws.filter((m) => m.type === 'energy/save_prefs').map((m) => m.device_consumption[m.device_consumption.length - 1]));
+  const asked = await confirm('add');
+  console.log('add asks:', asked.replace(/\s+/g, ' '));
+  const saved = await ev(() => window.hass.ws.filter((m) => m.type === 'energy/save_prefs').at(-1).device_consumption.at(-1));
   console.log('saved:', JSON.stringify(saved));
-  assert.deepEqual(saved, [{ stat_consumption: 'sensor.fridge_energy', name: 'Fridge', stat_rate: 'sensor.fridge_power' }]);
-  const left = await ev(() => [...window.card.shadowRoot.querySelectorAll('.echeckpage .placerow .ename')].map((n) => n.textContent));
-  assert.ok(!left.includes('Fridge'), 'counted now, so off the list');
+  assert.deepEqual(saved, { stat_consumption: 'sensor.fridge_energy', name: 'Fridge', stat_rate: 'sensor.fridge_power', included_in_stat: 'sensor.tv_plug_energy' });
+  await page.waitForTimeout(500);
+  const left = (await rowsOf()).map((r) => r[0]);
+  console.log('left:', JSON.stringify(left));
+  assert.deepEqual(left, ['Dehumidifier Power', 'Desk Plug (cloud) Power'], 'counted now, so off the list');
   await ev(() => window.card._close());
   await page.waitForTimeout(300);
 

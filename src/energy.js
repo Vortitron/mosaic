@@ -6,7 +6,7 @@
 // and the long-term statistics it keeps for them, so it agrees with that
 // dashboard. Mixed into the card like the calendar.
 
-import { cheapest, deviceTree, energyCheck, energyNow, energySources, kwhText, meterPower, priceSeries, statHours, statTotal, wattsText, withDevice } from './power.js';
+import { cheapest, deviceTree, energyCheck, energyNow, energySources, kwhText, meterPower, priceSeries, statHours, statTotal, swapDevice, wattsText, withDevice } from './power.js';
 import { nameOf } from './model.js';
 import { gaugeSvg } from './gauge.js';
 
@@ -395,6 +395,8 @@ export const energyMethods = {
     app.addEventListener('click', (e) => {
       const add = e.target.closest('[data-ecadd]');
       if (add) this._energyAdd(add.dataset.ecadd);
+      const swap = e.target.closest('[data-ecswap]');
+      if (swap) this._energySwap(swap.dataset.ecswap);
       const place = e.target.closest('[data-ecplace]');
       if (place) this._openUnplaced();
     });
@@ -408,38 +410,77 @@ export const energyMethods = {
     const c = energyCheck(hass, this._energyPrefs, this._energyTotals);
     const can = this._canEdit();
     const areas = hass.areas || {};
-    const problems = c.problems.map((p) => `<div class="placerow"><div class="placehead"><span class="ename">${esc(p.name)}</span></div><small class="eid">${esc(p.id)}</small><p class="esub">${esc(p.why[0].toUpperCase() + p.why.slice(1))}. Fix it in Home Assistant's Energy dashboard settings.</p></div>`).join('');
+    const byKey = new Map(c.missing.map((m) => [m.key, m]));
+    const named = new Map(((this._energyPrefs && this._energyPrefs.device_consumption) || []).map((d) => [d.stat_consumption, d.name || d.stat_consumption]));
+    // A broken entry: what is wrong, and (for an admin) a plug to count it by instead.
+    const problems = c.problems.map((p) => {
+      let act = '';
+      if (p.suggest) act = `<p class="esub"><b>${esc(byKey.get(p.suggest).name)}</b>, in the same room, isn't counted and reads ${esc(wattsText(byKey.get(p.suggest).w))}: probably its new plug, or the same plug through another integration.</p>`;
+      if (can && p.choices.length) {
+        const opts = p.choices.map((k) => `<option value="${esc(k)}"${k === p.suggest ? ' selected' : ''}>${esc(byKey.get(k).name)} · ${esc(wattsText(byKey.get(k).w))}</option>`).join('');
+        act += `<div class="ecact"><label class="esub">count it by <select data-ecpick="${esc(p.key)}">${p.suggest ? '' : '<option value="">choose…</option>'}${opts}</select></label><button class="pbtn" data-ecswap="${esc(p.key)}">swap</button></div>`;
+      } else if (!p.choices.length || !can) act += '<p class="esub">Fix it in Home Assistant\'s Energy dashboard settings.</p>';
+      return `<div class="placerow"><div class="placehead"><span class="ename">${esc(p.name)}</span></div><small class="eid">${esc(p.id)}</small><p class="esub">${esc(p.why[0].toUpperCase() + p.why.slice(1))}.</p>${act}</div>`;
+    }).join('');
+    const insideOpts = [...named].map(([k, n]) => `<option value="${esc(k)}">${esc(n)}</option>`).join('');
     const missing = c.missing.map((m) => {
       const where = m.area && areas[m.area] ? areas[m.area].name : 'no room';
       let act = '';
       if (m.like) act = `<p class="esub">It reads the same as <b>${esc(m.like)}</b>, which is counted: probably the same plug through a second integration. Leave it out.</p>`;
+      else if (m.replaces) act = `<p class="esub">Probably what <b>${esc(m.replaces)}</b> should count by now: swap it in above, so what is set inside ${esc(m.replaces)} moves with it.</p>`;
       else if (!m.energy) act = '<p class="esub">It only reports power. Home Assistant needs an energy sensor to count it: add an <i>Integral</i> helper (Settings → Helpers) on this power sensor, then add that to the Energy dashboard.</p>';
-      if (can && m.energy && !m.like) act += `<button class="pbtn" data-ecadd="${esc(m.key)}">add to the Energy dashboard</button>`;
+      if (can && m.energy && !m.like && !m.replaces) act += `<div class="ecact"><label class="esub">inside <select data-ecin="${esc(m.key)}"><option value="">nothing</option>${insideOpts}</select></label><button class="pbtn" data-ecadd="${esc(m.key)}">add to the Energy dashboard</button></div>`;
       return `<div class="placerow"><div class="placehead"><span class="ename">${esc(m.name)}</span><span class="evalue">${esc(wattsText(m.w))}</span></div><small class="eid">${esc(m.power)}${m.energy ? ` · counts by ${esc(m.energy)}` : ''} · ${esc(where)}</small>${act}</div>`;
     }).join('');
     const html = `${c.problems.length ? `<h3 class="echead">not working</h3>${problems}` : ''}${c.missing.length ? `<h3 class="echead">not counted</h3><p class="esub">These use power, but nothing in the Energy dashboard counts them.</p>${missing}` : ''}${!c.problems.length && !c.missing.length ? '<p class="esub">Everything that uses power is counted, and every sensor the Energy dashboard uses is working.</p>' : ''}`;
     if (page.dataset.html === html) return;
+    // What was chosen in a list stays chosen when the page is drawn again.
+    const kept = [...page.querySelectorAll('select')].map((x) => [(x.outerHTML.match(/data-[a-z]+="[^"]*"/) || [])[0], x.value]).filter(([a, v]) => a && v);
     page.dataset.html = html;
     page.innerHTML = html;
+    for (const [attr, v] of kept) {
+      const x = page.querySelector(`select[${attr}]`);
+      if (x && [...x.options].some((o) => o.value === v)) x.value = v;
+    }
   },
 
   async _energyAdd(key) {
     const hass = this._hass;
     const m = energyCheck(hass, this._energyPrefs, this._energyTotals).missing.find((x) => x.key === key);
     if (!m || !m.energy) return;
-    this._ask({ title: `Count ${m.name}?`, text: `Adds it to Home Assistant's Energy dashboard as a device, counted by ${m.energy}${m.power ? `, its power from ${m.power}` : ''}.`, yes: 'add', then: async () => {
-      try {
-        const fresh = await hass.callWS({ type: 'energy/get_prefs' });
-        await hass.callWS({ type: 'energy/save_prefs', device_consumption: withDevice(fresh, { energy: m.energy, power: m.power, name: m.name }) });
-        this._energyPrefs = await hass.callWS({ type: 'energy/get_prefs' });
-        this._powerAt = null;
-        this._toast(`${m.name} is counted now`);
-        this._fillEnergyCheck();
-        this._energyStats(true);
-      } catch (err) {
-        this._toast(`Not added: ${(err && err.message) || err}`);
-      }
-    } });
+    const pick = [...this.shadowRoot.querySelectorAll('select[data-ecin]')].find((x) => x.dataset.ecin === key);
+    const inside = (pick && pick.value) || null;
+    const outer = inside && ((this._energyPrefs.device_consumption || []).find((d) => d.stat_consumption === inside) || {}).name;
+    this._ask({ title: `Count ${m.name}?`, text: `Adds it to Home Assistant's Energy dashboard as a device, counted by ${m.energy}${m.power ? `, its power from ${m.power}` : ''}${inside ? `, inside ${outer || inside}` : ''}.`, yes: 'add', then: () => this._saveDevices((fresh) => withDevice(fresh, { energy: m.energy, power: m.power, name: m.name, inside }), `${m.name} is counted now`, 'Not added') });
+  },
+
+  // A broken entry counted by another plug's sensors instead.
+  async _energySwap(key) {
+    const hass = this._hass;
+    const c = energyCheck(hass, this._energyPrefs, this._energyTotals);
+    const p = c.problems.find((x) => x.key === key);
+    const pick = [...this.shadowRoot.querySelectorAll('select[data-ecpick]')].find((x) => x.dataset.ecpick === key);
+    const m = p && pick && c.missing.find((x) => x.key === pick.value);
+    if (!m || !m.energy) return this._toast('Choose what to count it by first');
+    const inner = ((this._energyPrefs.device_consumption) || []).filter((d) => d.included_in_stat === key).map((d) => d.name || d.stat_consumption);
+    this._ask({ title: `Count ${p.name} by ${m.name}?`, text: `${p.name} keeps its name and place in the Energy dashboard, counted by ${m.energy}${m.power ? `, its power from ${m.power}` : ''}.${inner.length ? ` ${inner.join(', ')}, set inside it, ${inner.length > 1 ? 'move' : 'moves'} with it.` : ''} Its past days are then drawn from the new counter's history; the old counter's stays recorded.`, yes: 'swap', then: () => this._saveDevices((fresh) => swapDevice(fresh, key, { energy: m.energy, power: m.power }), `${p.name} counts by ${m.name} now`, 'Not swapped') });
+    return undefined;
+  },
+
+  // Saves the Energy dashboard's devices, changed from what it has now.
+  async _saveDevices(change, done, fail) {
+    const hass = this._hass;
+    try {
+      const fresh = await hass.callWS({ type: 'energy/get_prefs' });
+      await hass.callWS({ type: 'energy/save_prefs', device_consumption: change(fresh) });
+      this._energyPrefs = await hass.callWS({ type: 'energy/get_prefs' });
+      this._powerAt = null;
+      this._toast(done);
+      this._fillEnergyCheck();
+      this._energyStats(true);
+    } catch (err) {
+      this._toast(`${fail}: ${(err && err.message) || err}`);
+    }
   },
 
   _energyClick(e) {
@@ -484,8 +525,14 @@ export const energyMethods = {
       ? `<p class="esub">These use power, but Home Assistant doesn’t know which room they are in, so the plan can’t show them.${can ? ' Give one a room and it joins that room’s total.' : ' An admin can give them rooms.'}</p>${items.map(row).join('')}`
       : '<p class="esub">Everything that uses power is in a room.</p>';
     if (page.dataset.html === html) return;
+    // What was chosen in a list stays chosen when the page is drawn again.
+    const kept = [...page.querySelectorAll('select')].map((x) => [(x.outerHTML.match(/data-[a-z]+="[^"]*"/) || [])[0], x.value]).filter(([a, v]) => a && v);
     page.dataset.html = html;
     page.innerHTML = html;
+    for (const [attr, v] of kept) {
+      const x = page.querySelector(`select[${attr}]`);
+      if (x && [...x.options].some((o) => o.value === v)) x.value = v;
+    }
   },
 
   async _placeEntity(id, areaId) {

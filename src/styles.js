@@ -588,6 +588,11 @@ button { font: inherit; color: inherit; background: none; border: 0; padding: 0;
 .placerow .eid { display: block; color: var(--fg2); font-size: 12px; margin: 2px 0 6px; overflow-wrap: anywhere; }
 .placesel { font: inherit; font-size: 16px; padding: 8px 10px; border: 2px solid var(--line); background: var(--bg); color: var(--fg); min-height: 44px; }
 .enote { color: var(--fg2); }
+.ecact { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; margin-top: 4px; }
+.ecact label { display: flex; align-items: center; gap: 8px; margin: 0; }
+.ecact select { font: inherit; font-size: 15px; padding: 6px 8px; border: 2px solid var(--line); background: var(--bg); color: var(--fg); max-width: 100%; min-width: 0; }
+.ecact .pbtn { margin: 0; }
+.root:not(.desk) .ecact select { min-height: 44px; }
 
 /* --- phones: everything a thumb has to hit is at least about 44 px ---------- */
 .root:not(.desk) .hub { gap: 0; padding: 2px calc(var(--pad) - 8px) 0; }

@@ -131,6 +131,16 @@ export function makeFakeHass(onUpdate, { agent = 'anthropic' } = {}) {
   add('sensor.fridge_energy', '310.2', { friendly_name: 'Fridge Energy', device_class: 'energy', unit_of_measurement: 'kWh', state_class: 'total_increasing' }, null);
   device('fridge_plug', 'Fridge', 'comms', ['sensor.fridge_power', 'sensor.fridge_energy']);
   add('sensor.dehumidifier_power', '210', { friendly_name: 'Dehumidifier Power', device_class: 'power', unit_of_measurement: 'W', state_class: 'measurement' }, 'bedroom');
+  // The old lamp's plug was replaced: the new one is seen twice, its power
+  // through a local integration (no room) and its total through the cloud
+  // (in the living room, where the old one was). A reading lamp is set
+  // inside the old one.
+  add('sensor.lamp_plug_power', '41', { friendly_name: 'Lamp plug Power', device_class: 'power', unit_of_measurement: 'W', state_class: 'measurement' }, null);
+  device('lamp_local', 'Lamp plug', null, ['sensor.lamp_plug_power']);
+  add('sensor.lamp_plug_total_energy', '3.2', { friendly_name: 'Lamp plug (cloud) Total energy', device_class: 'energy', unit_of_measurement: 'kWh', state_class: 'total_increasing' }, null);
+  device('lamp_cloud', 'Lamp plug', 'living_room', ['sensor.lamp_plug_total_energy']);
+  add('sensor.reading_lamp_energy', '5.1', { friendly_name: 'Reading lamp energy', device_class: 'energy', unit_of_measurement: 'kWh', state_class: 'total_increasing' }, null);
+  entities['sensor.old_lamp_energy'].area_id = 'living_room';
   add('sensor.desk_plug_cloud_power', '86', { friendly_name: 'Desk Plug (cloud) Power', device_class: 'power', unit_of_measurement: 'W', state_class: 'measurement' }, 'office');
   const energyPrefs = {
     energy_sources: [{ type: 'grid', stat_energy_from: 'sensor.grid_import_energy', stat_energy_to: 'sensor.grid_export_energy', entity_energy_price: 'sensor.electricity_price', number_energy_price: null, stat_cost: null, cost_adjustment_day: 0 }],
@@ -143,10 +153,11 @@ export function makeFakeHass(onUpdate, { agent = 'anthropic' } = {}) {
       { stat_consumption: 'sensor.server_energy', name: 'Server PSU', stat_rate: 'sensor.server_power' },
       { stat_consumption: 'sensor.garage_heater_energy', name: 'Garage heater', stat_rate: 'sensor.yaml_heater_power' },
       { stat_consumption: 'sensor.old_lamp_energy', name: 'Old lamp', stat_rate: 'sensor.old_lamp_power' },
+      { stat_consumption: 'sensor.reading_lamp_energy', name: 'Reading lamp', included_in_stat: 'sensor.old_lamp_energy' },
     ],
   };
   // Today's hourly statistics, as the recorder keeps them.
-  const perHour = { 'sensor.grid_import_energy': [0.6, 0.5, 0.5, 0.5, 0.6, 0.8, 1.4, 2.1, 1.6, 1.0, 0.9, 0.9, 1.1, 0.9, 0.8, 0.9, 1.2, 2.4, 2.6, 2.0, 1.5, 1.1, 0.9, 0.7], 'sensor.heat_pump_energy': 0.45, 'sensor.desk_plug_energy': 0.06, 'sensor.tv_plug_energy': 0.05, 'sensor.sofa_lamp_energy': 0.01, 'sensor.kettle_energy': 0.04, 'sensor.server_energy': 0.11, 'sensor.garage_heater_energy': 0.3 };
+  const perHour = { 'sensor.grid_import_energy': [0.6, 0.5, 0.5, 0.5, 0.6, 0.8, 1.4, 2.1, 1.6, 1.0, 0.9, 0.9, 1.1, 0.9, 0.8, 0.9, 1.2, 2.4, 2.6, 2.0, 1.5, 1.1, 0.9, 0.7], 'sensor.heat_pump_energy': 0.45, 'sensor.desk_plug_energy': 0.06, 'sensor.tv_plug_energy': 0.05, 'sensor.sofa_lamp_energy': 0.01, 'sensor.kettle_energy': 0.04, 'sensor.server_energy': 0.11, 'sensor.garage_heater_energy': 0.3, 'sensor.old_lamp_energy': 0, 'sensor.reading_lamp_energy': 0.02, 'sensor.lamp_plug_total_energy': 0.041 };
   // Hours from the start asked for (yesterday's a little lower than
   // today's), thirty days that wander, and five-minute power for a day.
   const hourly = (id, base, dayOff, hours) => Array.from({ length: hours }, (_, h) => {

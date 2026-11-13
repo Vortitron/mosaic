@@ -197,7 +197,7 @@ test("a camera's time is when its picture last changed", () => {
   assert.equal(stampText(moved, at + 86400e3), '13 nov 14:03', 'yesterday’s says its day');
 });
 
-import { energyCheck, withDevice } from '../src/power.js';
+import { energyCheck, swapDevice, withDevice } from '../src/power.js';
 import { niceMax } from '../src/energy.js';
 
 test('the energy check: what is broken, and what nothing counts', () => {
@@ -252,6 +252,59 @@ test('the energy check: what is broken, and what nothing counts', () => {
   assert.equal(list.length, 5);
   assert.deepEqual(list[4], { stat_consumption: 'sensor.fridge_energy', name: 'Fridge', stat_rate: 'sensor.fridge_power' });
   assert.equal(withDevice({ device_consumption: list }, { energy: 'sensor.fridge_energy', name: 'Fridge' }).length, 5, 'never twice');
+});
+
+test("a replaced plug: its twin's counter found, and swapped in with what is inside it", () => {
+  const states = {};
+  const entities = {};
+  const areas = { wardrobe: { area_id: 'wardrobe', name: 'Sofie Wardrobe' } };
+  const devices = { old: { id: 'old', name: 'Smart Plug', area_id: 'wardrobe' }, bio: { id: 'bio', name: 'bio', area_id: null }, biocloud: { id: 'biocloud', name: 'bio', area_id: 'wardrobe' }, amp: { id: 'amp', name: 'Bio Amp Local', area_id: null } };
+  const s = (id, state, attrs, dev) => {
+    states[id] = { state, attributes: attrs };
+    entities[id] = { device_id: dev, area_id: null };
+  };
+  const E = (name) => ({ friendly_name: name, device_class: 'energy', unit_of_measurement: 'kWh', state_class: 'total_increasing' });
+  const P = (name) => ({ friendly_name: name, device_class: 'power', unit_of_measurement: 'W', state_class: 'measurement' });
+  // GamlaBio, 13 Nov: Bio Stuff's counter stopped on 17 Oct with its plug;
+  // the plug now shows as "bio" twice, power locally, the total in the cloud.
+  s('sensor.house_l1_energy', '2894.8', E('L1 Energy'), null);
+  s('sensor.smart_plug_energy', '52.7', E('Smart Plug Energy'), 'old');
+  s('sensor.bio_leds_weekly_energy', '0', E('Smart Plug Weekly Energy'), 'old');
+  s('sensor.bio_power_power', '71.7', P('Bio power Power'), 'bio');
+  s('sensor.bio_leds_total_energy', '3.171', E('Bio power (cloud) Total energy'), 'biocloud');
+  s('sensor.energy_monitoring_smartplug_power', '34.4', P('Bio Amp Local Power'), 'amp');
+  s('sensor.bio_amp_local_energy_2', '14.7', E('Bio Amp Local Energy'), 'amp');
+  const prefs = { device_consumption: [
+    { stat_consumption: 'sensor.house_l1_energy', name: 'L1' },
+    { stat_consumption: 'sensor.smart_plug_energy', name: 'Bio Stuff', included_in_stat: 'sensor.house_l1_energy', stat_rate: 'sensor.smart_plug_power' },
+    { stat_consumption: 'sensor.bio_amp_local_energy_2', stat_rate: 'sensor.energy_monitoring_smartplug_power', name: 'Bio Amp', included_in_stat: 'sensor.smart_plug_energy' },
+  ] };
+  const today = { 'sensor.house_l1_energy': 9.1, 'sensor.smart_plug_energy': 0, 'sensor.bio_amp_local_energy_2': 0.578, 'sensor.bio_leds_total_energy': 0.905 };
+  const c = energyCheck({ states, entities, devices, areas }, prefs, today);
+  assert.deepEqual(c.missing.map((m) => [m.name, m.energy, m.replaces]), [['bio', 'sensor.bio_leds_total_energy', 'Bio Stuff']]);
+  assert.deepEqual(c.problems.map((p) => [p.name, p.suggest]), [['Bio Stuff', 'bio']], 'the Amp inside it is not blamed for a dead outer one');
+  assert.match(c.problems[0].why, /gone.*counted nothing today/);
+  const swapped = swapDevice(prefs, 'sensor.smart_plug_energy', { energy: 'sensor.bio_leds_total_energy', power: 'sensor.bio_power_power' });
+  assert.deepEqual(swapped, [
+    { stat_consumption: 'sensor.house_l1_energy', name: 'L1' },
+    { stat_consumption: 'sensor.bio_leds_total_energy', name: 'Bio Stuff', included_in_stat: 'sensor.house_l1_energy', stat_rate: 'sensor.bio_power_power' },
+    { stat_consumption: 'sensor.bio_amp_local_energy_2', stat_rate: 'sensor.energy_monitoring_smartplug_power', name: 'Bio Amp', included_in_stat: 'sensor.bio_leds_total_energy' },
+  ]);
+  const after = energyCheck({ states, entities, devices, areas }, { device_consumption: swapped }, today);
+  assert.deepEqual([after.problems, after.missing], [[], []], 'nothing left to look at');
+  // Something counting more than what it is inside, the outer one not
+  // otherwise broken: said on the inner one.
+  const ok = { ...today, 'sensor.smart_plug_energy': 0.2 };
+  const fixedRate = { device_consumption: prefs.device_consumption.map((d) => (d.name === 'Bio Stuff' ? { ...d, stat_rate: 'sensor.bio_power_power' } : d)) };
+  const over = energyCheck({ states, entities, devices, areas }, fixedRate, ok);
+  assert.deepEqual(over.problems.map((p) => p.name), ['Bio Amp']);
+  assert.match(over.problems[0].why, /more today \(0\.58 kWh\) than Bio Stuff \(0\.20 kWh\)/);
+  // Two plugs of one generic name: not trusted as twins.
+  s('sensor.smart_plug_2_power', '20', P('Smart plug Power'), null);
+  s('sensor.smart_plug_9_energy', '1', E('Smart plug Energy'), null);
+  s('sensor.smart_plug_8_energy', '1', E('Smart plug Energy'), null);
+  assert.equal(energyCheck({ states, entities, devices, areas }, swapped, today).missing.find((m) => m.power === 'sensor.smart_plug_2_power').energy, null);
+  assert.deepEqual(withDevice(swapped, { energy: 'sensor.x_energy', name: 'X', inside: 'sensor.bio_leds_total_energy' }).at(-1), { stat_consumption: 'sensor.x_energy', name: 'X', included_in_stat: 'sensor.bio_leds_total_energy' });
 });
 
 test("a dial's top is a round number above the reading", () => {

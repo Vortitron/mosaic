@@ -242,8 +242,35 @@ const isEnergy = (hass, id) => {
 };
 const devOf = (hass, id) => (hass.entities && hass.entities[id] && hass.entities[id].device_id) || null;
 
-// { problems: [{ name, id, why }], missing: [{ key, name, power, energy, w, area, like }] }
-// problems: Energy dashboard entries whose sensors have gone or stopped.
+// A name without the integration it comes through or what it reads:
+// "Bio power (cloud) Total energy", "Bio power Power" and a device called
+// "bio" all come to "bio".
+const bare = (s) => String(s || '').toLowerCase().replace(/\((cloud|local|lan|tuya|wifi)\)|\b(cloud|local|lan)\b/g, ' ').replace(/\b(total|today'?s)?\s*(energy|power|consumption|usage)\b/g, ' ').replace(/[^a-z0-9åäöæø]+/g, ' ').trim();
+const deviceName = (hass, dev) => {
+  const d = dev && hass.devices && hass.devices[dev];
+  return d ? d.name_by_user || d.name || '' : '';
+};
+
+// The energy counter for a power sensor with none beside it: one plug seen
+// through two integrations (a local one with power, the cloud one with the
+// total) shows as two devices of one name. Only when exactly one fits.
+function twinEnergy(hass, powerId, skip) {
+  const dev = devOf(hass, powerId);
+  const names = new Set([bare(nameOf(hass, powerId)), bare(deviceName(hass, dev))].filter((n) => n.length >= 3));
+  if (!names.size) return null;
+  const fits = Object.keys(hass.states).filter((e) => isEnergy(hass, e) && !skip.has(e) && !DERIVED.test(e) && (!dev || devOf(hass, e) !== dev)
+    && (names.has(bare(nameOf(hass, e))) || (devOf(hass, e) && names.has(bare(deviceName(hass, devOf(hass, e)))))));
+  return fits.length === 1 ? fits[0] : null;
+}
+
+const areasOf = (hass, ids) => new Set(ids.map((id) => id && areaOf(hass, id)).filter(Boolean).map((a) => a.area_id));
+
+// { problems: [{ name, key, id, why, choices, suggest }], missing: [{ key, name, power, energy, w, area, like, replaces }] }
+// problems: Energy dashboard entries whose sensors have gone or stopped, or
+// that count more than what they are inside; with, for the broken ones, the
+// uncounted plugs that could take their place (a plug replaced, or its
+// integration changed, leaves the old entry counting nothing), and the one
+// that most likely does (the only one in the same room).
 // missing: things using power that nothing in the Energy dashboard counts,
 // with the energy sensor to count them by (or none: power only), and `like`
 // when their reading is the same as something already counted (two
@@ -258,16 +285,41 @@ export function energyCheck(hass, prefs, today = null) {
   for (const g of src.grid) for (const id of [g.from, g.to, g.price, g.cost, g.rate]) if (id) used.add(id);
   for (const s of [...src.solar, ...src.battery]) for (const id of [s.from, s.to, s.rate]) if (id) used.add(id);
   const tracked = [];
-  for (const d of (prefs && prefs.device_consumption) || []) {
+  const list = (prefs && prefs.device_consumption) || [];
+  const broken = new Set();
+  for (const d of list) {
     const name = d.name || d.stat_consumption;
     for (const id of [d.stat_consumption, d.stat_rate]) if (id) used.add(id);
+    const why = [];
+    let id = d.stat_rate || d.stat_consumption;
     if (d.stat_rate) {
       const st = hass.states[d.stat_rate];
-      if (!st) problems.push({ name, id: d.stat_rate, why: 'its power sensor is gone (renamed or removed), so it reads nothing now' });
-      else if (st.state === 'unavailable') problems.push({ name, id: d.stat_rate, why: 'its power sensor is unavailable' });
+      if (!st) why.push('its power sensor is gone (renamed or removed), so it reads nothing now');
+      else if (st.state === 'unavailable') why.push('its power sensor is unavailable');
       else tracked.push({ name, w: watts(hass, d.stat_rate), key: d.stat_consumption });
     }
-    if (/^sensor\./.test(d.stat_consumption) && !hass.states[d.stat_consumption]) problems.push({ name, id: d.stat_consumption, why: 'its energy sensor is gone, so it counts nothing new' });
+    if (/^sensor\./.test(d.stat_consumption) && !hass.states[d.stat_consumption]) {
+      if (!why.length) id = d.stat_consumption;
+      why.push('its energy sensor is gone, so it counts nothing new');
+    } else if (today && today[d.stat_consumption] === 0 && (watts(hass, d.stat_rate) || 0) >= 20 && new Date().getHours() >= 3) {
+      id = d.stat_consumption;
+      why.push(`its energy counter has counted nothing today, though its power sensor reads ${wattsText(watts(hass, d.stat_rate))}`);
+    } else if (why.length && today && today[d.stat_consumption] === 0) why.push('its energy counter has counted nothing today');
+    if (why.length) {
+      broken.add(d.stat_consumption);
+      problems.push({ name, key: d.stat_consumption, id, why: why.join('; '), choices: [], suggest: null });
+    }
+  }
+  // Something inside another that counts more than it today: the outer one
+  // has stopped (or the wrong one is named).
+  const named = new Map(list.map((d) => [d.stat_consumption, d.name || d.stat_consumption]));
+  if (today) {
+    for (const d of list) {
+      const mine = today[d.stat_consumption];
+      const outer = d.included_in_stat && today[d.included_in_stat];
+      if (!d.included_in_stat || broken.has(d.included_in_stat) || broken.has(d.stat_consumption) || !(mine > 0.1) || typeof outer !== 'number') continue;
+      if (mine > outer * 1.1 + 0.05) problems.push({ name: d.name || d.stat_consumption, key: d.stat_consumption, id: d.stat_consumption, why: `it counts more today (${kwhText(mine)}) than ${named.get(d.included_in_stat) || d.included_in_stat} (${kwhText(outer)}), which it is set inside`, choices: [], suggest: null });
+    }
   }
   // Devices any of whose entities the dashboard already uses, and meters.
   const usedDevices = new Set([...used].map((id) => devOf(hass, id)).filter(Boolean));
@@ -283,12 +335,12 @@ export function energyCheck(hass, prefs, today = null) {
     const key = dev || id;
     const had = by.get(key);
     if (had && had.w >= w) continue;
-    // Its energy counter: on the same device, or named after the power
-    // sensor the way an Integral or PowerCalc helper names one.
-    const named = [`${id}_energy`, id.replace(/_power$/, '_energy')].find((e) => e !== id && isEnergy(hass, e)) || null;
-    const energy = (dev ? Object.keys(hass.states).filter((e) => devOf(hass, e) === dev && isEnergy(hass, e) && !DERIVED.test(e)).sort((a, b) => a.length - b.length)[0] : null) || named;
+    // Its energy counter: on the same device, named after the power sensor
+    // the way an Integral or PowerCalc helper names one, or on its twin.
+    const helper = [`${id}_energy`, id.replace(/_power$/, '_energy')].find((e) => e !== id && isEnergy(hass, e)) || null;
+    const energy = (dev ? Object.keys(hass.states).filter((e) => devOf(hass, e) === dev && isEnergy(hass, e) && !DERIVED.test(e)).sort((a, b) => a.length - b.length)[0] : null) || helper || twinEnergy(hass, id, used);
     const device = dev && hass.devices ? hass.devices[dev] : null;
-    const area = areaOf(hass, id);
+    const area = areaOf(hass, id) || (energy && areaOf(hass, energy));
     // The same reading as something counted (one plug, two integrations),
     // or the same energy today as two counted things together (a server and
     // its two supplies).
@@ -309,16 +361,44 @@ export function energyCheck(hass, prefs, today = null) {
       const tight = Math.max(0.002, mine * 0.002);
       if (fits[0] && fits[0].off <= tight && (!fits[1] || fits[1].off >= fits[0].off * 3 + tight)) like = { name: fits[0].name };
     }
-    by.set(key, { key, name: (device && (device.name_by_user || device.name)) || nameOf(hass, id), power: id, energy, w, area: area ? area.area_id : null, like: like ? like.name : null });
+    by.set(key, { key, name: (device && (device.name_by_user || device.name)) || nameOf(hass, id), power: id, energy, w, area: area ? area.area_id : null, like: like ? like.name : null, replaces: null });
   }
   const missing = [...by.values()].sort((a, b) => (a.like ? 1 : 0) - (b.like ? 1 : 0) || b.w - a.w);
+  // What could take a broken entry's place, and the likeliest.
+  const spare = missing.filter((m) => m.energy && !m.like);
+  for (const p of problems) {
+    if (!broken.has(p.key)) continue;
+    const d = list.find((x) => x.stat_consumption === p.key);
+    p.choices = spare.map((m) => m.key);
+    const rooms = areasOf(hass, [d.stat_consumption, d.stat_rate]);
+    const here = rooms.size ? spare.filter((m) => [...areasOf(hass, [m.power, m.energy])].some((a) => rooms.has(a))) : [];
+    if (here.length === 1 && !here[0].replaces) {
+      p.suggest = here[0].key;
+      here[0].replaces = p.name;
+    }
+  }
   return { problems, missing };
 }
 
 // The Energy dashboard's devices with one more: what energy/save_prefs takes.
-export function withDevice(prefs, { energy, power, name }) {
+// inside: the energy counter of the device it is plugged in behind, if any.
+export function withDevice(prefs, { energy, power, name, inside = null }) {
   const list = [...((prefs && prefs.device_consumption) || [])];
   if (list.some((d) => d.stat_consumption === energy)) return list;
-  list.push({ stat_consumption: energy, name, ...(power ? { stat_rate: power } : {}) });
+  list.push({ stat_consumption: energy, name, ...(power ? { stat_rate: power } : {}), ...(inside ? { included_in_stat: inside } : {}) });
   return list;
+}
+
+// The Energy dashboard's devices with one counted by new sensors (its plug
+// replaced): its name and place kept, and what was inside it moved along.
+export function swapDevice(prefs, key, { energy, power }) {
+  const list = (prefs && prefs.device_consumption) || [];
+  if (key === energy || list.some((d) => d.stat_consumption === energy)) return list;
+  return list.map((d) => {
+    if (d.stat_consumption === key) {
+      const { stat_rate: _old, ...rest } = d;
+      return { ...rest, stat_consumption: energy, ...(power ? { stat_rate: power } : {}) };
+    }
+    return d.included_in_stat === key ? { ...d, included_in_stat: energy } : d;
+  });
 }
