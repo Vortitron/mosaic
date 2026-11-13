@@ -511,35 +511,73 @@ button { font: inherit; color: inherit; background: none; border: 0; padding: 0;
 .camcard small b { color: var(--fg); font-weight: 400; }
 .root:not(.desk) .camcard { width: 160px; }
 
-/* The energy tab: panels side by side on a wide screen, one under another on a phone. */
-.tabpane.energy.on { overflow-y: auto; overscroll-behavior-y: contain; }
-.energypage { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 28px 40px; padding: 10px var(--pad) calc(40px + env(safe-area-inset-bottom)); align-items: start; }
-.desk .energypage { padding: 18px 16px 40px; }
-.en[hidden] { display: none; }
-.en h3 { font-size: 15px; font-weight: 400; color: var(--fg2); text-transform: lowercase; margin: 0 0 2px; }
-.ehero { font-size: 56px; font-weight: 200; line-height: 1.05; font-variant-numeric: tabular-nums; }
-.ehero small { font-size: 20px; font-weight: 300; margin-left: 6px; color: var(--fg2); }
-.esub { font-size: 13px; color: var(--fg2); margin: 2px 0; }
-.edaychart { position: relative; margin-top: 10px; }
-.edaybars { display: block; width: 100%; height: 70px; overflow: visible; }
-.edaybars .ehit { fill: transparent; }
-.edaybars .ebar { fill: var(--accent); opacity: .7; }
-.edaybars .now .ebar { opacity: 1; }
-.edaybars .past .ebar { opacity: .35; }
-@media (hover: hover) { .edaybars .ebarslot:hover .ebar { opacity: 1; } }
-.edaybars .ebase { stroke: var(--line); stroke-width: 1; vector-effect: non-scaling-stroke; }
-.eticks { position: relative; height: 16px; font-size: 11px; color: var(--fg2); font-variant-numeric: tabular-nums; }
-.eticks span { position: absolute; top: 2px; transform: translateX(-50%); }
-.erow { display: grid; grid-template-columns: 1fr auto; gap: 0 12px; width: 100%; text-align: left; padding: 7px 0 9px calc(var(--depth, 0) * 16px); font: inherit; color: var(--fg); position: relative; }
-button.erow { cursor: pointer; }
-@media (hover: hover) { button.erow:hover .ename { color: var(--accent); } }
-.erow .ename { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 15px; }
-.erow .evalue { font-size: 14px; color: var(--fg2); font-variant-numeric: tabular-nums; }
-.erow .ebarline { grid-column: 1 / -1; display: block; height: 4px; margin-top: 4px; background: color-mix(in srgb, var(--fg) 8%, transparent); }
-.erow .ebarline::before { content: ''; display: block; height: 100%; width: var(--pct); background: var(--accent); }
-.erow.child .ename { font-size: 14px; }
-.erow.quiet .ename { color: var(--fg2); }
-.erow.quiet .ebarline::before { background: color-mix(in srgb, var(--fg) 35%, transparent); }
+/* The energy tab: a Start screen of live tiles in the accent colour, dials
+   and charts in white on them. Tiles are 2, 4 units wide and 1-3 tall; on a
+   phone the wide ones take the full width. */
+.tabpane.energy.on { overflow-y: auto; overscroll-behavior-y: contain; position: relative; }
+.etiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(76px, 1fr)); grid-auto-rows: 76px; grid-auto-flow: row dense; gap: 6px; padding: 10px var(--pad) calc(40px + env(safe-area-inset-bottom)); }
+.desk .etiles { padding: 16px 16px 40px; grid-template-columns: repeat(auto-fill, minmax(84px, 1fr)); grid-auto-rows: 84px; gap: 8px; }
+.etile { grid-column: span 2; grid-row: span 1; background: var(--accent); color: #fff; padding: 10px 12px; position: relative; overflow: hidden; display: flex; flex-direction: column; min-width: 0; animation: etileIn 400ms cubic-bezier(.1,.9,.2,1) both; }
+.etile.w4 { grid-column: span 4; }
+.etile.h2 { grid-row: span 2; }
+.etile.h3 { grid-row: span 3; }
+.etile:nth-child(2) { animation-delay: 40ms; } .etile:nth-child(3) { animation-delay: 80ms; } .etile:nth-child(4) { animation-delay: 120ms; } .etile:nth-child(n+5) { animation-delay: 160ms; }
+@keyframes etileIn { from { opacity: 0; transform: perspective(800px) rotateY(-28deg) translateX(-8px); } to { opacity: 1; transform: none; } }
+@media (prefers-reduced-motion: reduce) { .etile { animation: none; } }
+.etile.alert { background: color-mix(in srgb, var(--accent) 55%, #000); }
+.etile[data-echeck] { cursor: pointer; }
+.etile h3 { margin: 0; font-size: 13px; font-weight: 600; text-transform: lowercase; opacity: .9; flex: 0 0 auto; }
+.etile .esub { font-size: 13px; opacity: .85; margin-top: 2px; }
+.edial { flex: 1 1 auto; min-height: 0; display: flex; align-items: center; justify-content: center; }
+.edial .gauge { width: 100%; height: 100%; max-height: 100%; color: #fff; }
+.edial .gauge .gbig { font-size: 19px; }
+.esplit { display: flex; flex-wrap: wrap; gap: 2px 12px; font-size: 12px; opacity: .9; flex: 0 0 auto; }
+.esplit b, .efacts b { font-weight: 600; }
+.efacts { display: flex; flex-wrap: wrap; gap: 2px 14px; font-size: 13px; opacity: .92; margin: 2px 0 4px; flex: 0 0 auto; }
+.ebig { font-size: 40px; font-weight: 200; line-height: 1.05; font-variant-numeric: tabular-nums; display: flex; align-items: baseline; gap: 4px; flex-wrap: wrap; margin-top: 2px; }
+.ebig small { font-size: 15px; font-weight: 400; opacity: .85; }
+.ebig.ecost { font-size: 28px; }
+.efill { flex: 1 1 auto; }
+.ecap { text-align: center; font-size: 13px; opacity: .9; margin-top: -4px; flex: 0 0 auto; }
+.ebig.ecount { font-size: 30px; margin-top: 0; }
+.etile:not(.h2):not(.h3) { padding: 7px 12px 6px; }
+.eline1 { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.etrend { font-size: 12px; opacity: .92; }
+.echart { position: relative; flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; margin-top: 2px; }
+.echart svg { flex: 1 1 auto; min-height: 0; width: 100%; display: block; overflow: visible; }
+.echart .ehit { fill: transparent; }
+.echart .ebar { fill: #fff; opacity: .8; }
+.echart .past .ebar { opacity: .45; }
+.echart .now .ebar { opacity: 1; }
+.echart .mark .ebar { fill: #fff; opacity: 1; stroke: color-mix(in srgb, var(--accent) 40%, #000); stroke-width: .4; vector-effect: non-scaling-stroke; }
+.echart .eghost { fill: none; stroke: #fff; stroke-opacity: .7; stroke-width: 1; stroke-dasharray: 2 2; vector-effect: non-scaling-stroke; }
+@media (hover: hover) { .echart .eslot:hover .ebar { opacity: 1; } }
+.echart .earea { fill: #fff; opacity: .22; }
+.echart .eline { fill: none; stroke: #fff; stroke-width: 2; vector-effect: non-scaling-stroke; stroke-linejoin: round; }
+.eticks { position: relative; height: 15px; font-size: 11px; opacity: .85; font-variant-numeric: tabular-nums; flex: 0 0 auto; }
+.eticks span { position: absolute; top: 2px; transform: translateX(-50%); white-space: nowrap; }
+.elegend { display: flex; gap: 12px; font-size: 12px; opacity: .92; flex: 0 0 auto; margin: 2px 0 4px; }
+.elegend .lk { display: inline-block; width: 10px; height: 10px; margin-right: 5px; vertical-align: -1px; }
+.elegend .lk.solid { background: #fff; }
+.elegend .lk.ghost { border: 1px dashed #fff; }
+.elist { flex: 1 1 auto; min-height: 0; overflow-y: auto; scrollbar-width: thin; margin-right: -6px; padding-right: 6px; }
+.etile .erow { display: grid; grid-template-columns: 1fr auto; gap: 0 10px; width: 100%; text-align: left; padding: 5px 0 6px calc(var(--depth, 0) * 14px); font: inherit; color: #fff; }
+.etile button.erow { cursor: pointer; }
+.etile .erow .ename { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 14px; }
+.etile .erow .evalue { font-size: 13px; opacity: .9; font-variant-numeric: tabular-nums; }
+.etile .erow .ebarline { grid-column: 1 / -1; display: block; height: 3px; margin-top: 3px; background: rgba(255,255,255,.22); }
+.etile .erow .ebarline::before { content: ''; display: block; height: 100%; width: var(--pct); background: #fff; }
+.etile .erow.quiet .ename { opacity: .8; font-style: italic; }
+.etile .erow.quiet .ebarline::before { background: rgba(255,255,255,.55); }
+@media (hover: hover) { .etile button.erow:hover .ename { text-decoration: underline; } }
+.etip { position: absolute; z-index: 5; pointer-events: none; background: var(--bg); color: var(--fg); border: 1px solid var(--line); padding: 4px 8px; font-size: 12px; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.root:not(.desk) .etiles { grid-template-columns: repeat(4, 1fr); grid-auto-rows: calc((100vw - var(--pad) * 2 - 18px) / 4); }
+.root:not(.desk) .etile.w2 { grid-column: span 2; }
+.root:not(.desk) .etile.w4 { grid-column: span 4; }
+.root:not(.desk) .etile.h3 { grid-row: span 4; }
+.esub { font-size: 13px; color: var(--fg2); margin: 4px 0; }
+.echeckpage .pbtn { margin-top: 6px; }
+.echead { font-size: 15px; font-weight: 400; color: var(--fg2); text-transform: lowercase; margin: 14px 0 0; }
 .unplacedpage { max-width: 620px; }
 .placerow { padding: 10px 0 12px; border-bottom: 1px solid var(--line); }
 .placehead { display: flex; justify-content: space-between; gap: 12px; font-size: 17px; }

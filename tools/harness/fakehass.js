@@ -122,6 +122,16 @@ export function makeFakeHass(onUpdate, { agent = 'anthropic' } = {}) {
   add('sensor.server_power', '112', { friendly_name: 'Server PSU Power', device_class: 'power', unit_of_measurement: 'W' }, null);
   add('sensor.yaml_heater_power', '450', { friendly_name: 'Garage Heater Power', device_class: 'power', unit_of_measurement: 'W' }, null);
   delete entities['sensor.yaml_heater_power'];
+  // The devices' energy counters (the Energy dashboard counts by these).
+  for (const [id, v] of [['heat_pump_energy', 4120], ['desk_plug_energy', 210], ['tv_plug_energy', 96], ['sofa_lamp_energy', 12], ['server_energy', 880], ['garage_heater_energy', 640], ['old_lamp_energy', 31]]) add(`sensor.${id}`, String(v), { friendly_name: id.replace(/_/g, ' '), device_class: 'energy', unit_of_measurement: 'kWh', state_class: 'total_increasing' }, null);
+  // For the energy check: a fridge with an energy counter nobody counts, a
+  // dehumidifier that reports only power, the desk plug again through a
+  // second integration, and a counted lamp whose power sensor was renamed.
+  add('sensor.fridge_power', '62', { friendly_name: 'Fridge Power', device_class: 'power', unit_of_measurement: 'W', state_class: 'measurement' }, null);
+  add('sensor.fridge_energy', '310.2', { friendly_name: 'Fridge Energy', device_class: 'energy', unit_of_measurement: 'kWh', state_class: 'total_increasing' }, null);
+  device('fridge_plug', 'Fridge', 'comms', ['sensor.fridge_power', 'sensor.fridge_energy']);
+  add('sensor.dehumidifier_power', '210', { friendly_name: 'Dehumidifier Power', device_class: 'power', unit_of_measurement: 'W', state_class: 'measurement' }, 'bedroom');
+  add('sensor.desk_plug_cloud_power', '86', { friendly_name: 'Desk Plug (cloud) Power', device_class: 'power', unit_of_measurement: 'W', state_class: 'measurement' }, 'office');
   const energyPrefs = {
     energy_sources: [{ type: 'grid', stat_energy_from: 'sensor.grid_import_energy', stat_energy_to: 'sensor.grid_export_energy', entity_energy_price: 'sensor.electricity_price', number_energy_price: null, stat_cost: null, cost_adjustment_day: 0 }],
     device_consumption: [
@@ -132,21 +142,43 @@ export function makeFakeHass(onUpdate, { agent = 'anthropic' } = {}) {
       { stat_consumption: 'sensor.kettle_energy', name: 'Kettle', stat_rate: 'sensor.kettle_power' },
       { stat_consumption: 'sensor.server_energy', name: 'Server PSU', stat_rate: 'sensor.server_power' },
       { stat_consumption: 'sensor.garage_heater_energy', name: 'Garage heater', stat_rate: 'sensor.yaml_heater_power' },
+      { stat_consumption: 'sensor.old_lamp_energy', name: 'Old lamp', stat_rate: 'sensor.old_lamp_power' },
     ],
   };
   // Today's hourly statistics, as the recorder keeps them.
   const perHour = { 'sensor.grid_import_energy': [0.6, 0.5, 0.5, 0.5, 0.6, 0.8, 1.4, 2.1, 1.6, 1.0, 0.9, 0.9, 1.1, 0.9, 0.8, 0.9, 1.2, 2.4, 2.6, 2.0, 1.5, 1.1, 0.9, 0.7], 'sensor.heat_pump_energy': 0.45, 'sensor.desk_plug_energy': 0.06, 'sensor.tv_plug_energy': 0.05, 'sensor.sofa_lamp_energy': 0.01, 'sensor.kettle_energy': 0.04, 'sensor.server_energy': 0.11, 'sensor.garage_heater_energy': 0.3 };
-  const statsToday = (ids) => {
+  // Hours from the start asked for (yesterday's a little lower than
+  // today's), thirty days that wander, and five-minute power for a day.
+  const hourly = (id, base, dayOff, hours) => Array.from({ length: hours }, (_, h) => {
+    let v = (Array.isArray(base) ? base[h] : base) * (dayOff ? 0.85 + 0.1 * Math.cos(h) : 1);
+    if (id.endsWith('_cost')) v *= 1.4 + spot[h].value;
+    if (!dayOff && h === hourNow) v *= new Date().getMinutes() / 60;
+    return { start: at(dayOff, h).getTime(), end: at(dayOff, h + 1).getTime(), change: Math.round(v * 1000) / 1000 };
+  });
+  const statsFor = (msg) => {
     const out = {};
-    for (const id of ids) {
+    const from = new Date(msg.start_time).getTime();
+    for (const id of msg.statistic_ids) {
+      if (msg.period === '5minute') {
+        if (id !== 'sensor.grid_power') continue;
+        out[id] = [];
+        for (let t = Math.ceil(from / 300e3) * 300e3; t < Date.now(); t += 300e3) {
+          const h = new Date(t).getHours() + new Date(t).getMinutes() / 60;
+          out[id].push({ start: t, end: t + 300e3, mean: Math.round(600 + 900 * Math.max(0, Math.sin(((h - 5) / 24) * 2 * Math.PI)) + (h > 17 && h < 19.5 ? 1400 : 0) + 120 * Math.sin(t / 7e5)) });
+        }
+        continue;
+      }
       const base = id.endsWith('_cost') ? perHour['sensor.grid_import_energy'] : perHour[id];
       if (base === undefined) continue;
-      out[id] = Array.from({ length: hourNow + 1 }, (_, h) => {
-        let v = Array.isArray(base) ? base[h] : base;
-        if (id.endsWith('_cost')) v *= 1.4 + spot[h].value;
-        if (h === hourNow) v *= new Date().getMinutes() / 60;
-        return { start: at(0, h).getTime(), end: at(0, h + 1).getTime(), change: Math.round(v * 1000) / 1000 };
-      });
+      if (msg.period === 'day') {
+        out[id] = Array.from({ length: 30 }, (_, k) => {
+          const d = -29 + k;
+          const total = (Array.isArray(base) ? base.reduce((a, b) => a + b, 0) : base * 24) * (0.8 + 0.35 * Math.abs(Math.sin(k * 1.7))) * (d === 0 ? (hourNow + 1) / 24 : 1);
+          return { start: at(d, 0).getTime(), end: at(d + 1, 0).getTime(), change: Math.round(total * (id.endsWith('_cost') ? 2.1 : 1) * 1000) / 1000 };
+        }).filter((r) => r.start >= from - 1);
+        continue;
+      }
+      out[id] = [...(from < at(0, 0).getTime() ? hourly(id, base, -1, 24) : []), ...hourly(id, base, 0, hourNow + 1)];
     }
     return out;
   };
@@ -202,7 +234,11 @@ export function makeFakeHass(onUpdate, { agent = 'anthropic' } = {}) {
         return null;
       }
       if (msg.type === 'energy/get_prefs') return JSON.parse(JSON.stringify(energyPrefs));
-      if (msg.type === 'recorder/statistics_during_period') return statsToday(msg.statistic_ids);
+      if (msg.type === 'recorder/statistics_during_period') return statsFor(msg);
+      if (msg.type === 'energy/save_prefs') {
+        for (const k of ['energy_sources', 'device_consumption', 'device_consumption_water']) if (msg[k]) energyPrefs[k] = msg[k];
+        return JSON.parse(JSON.stringify(energyPrefs));
+      }
       if (msg.type === 'config/device_registry/update') {
         devices[msg.device_id] = { ...devices[msg.device_id], area_id: msg.area_id };
         hass = { ...hass, devices: { ...devices } };

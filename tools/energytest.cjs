@@ -24,23 +24,63 @@ const URL = (process.env.URL || 'http://127.0.0.1:18766/tools/harness/') + '?bar
   console.log('tabs:', tabs.join(', '));
   assert.ok(tabs.includes('energy'));
   await ev(() => window.card._goTab('energy'));
-  await page.waitForTimeout(1200);
-  const panels = await ev(() => Object.fromEntries([...window.card.shadowRoot.querySelectorAll('.en')].map((s) => [s.className.replace('en ', ''), s.hidden ? '' : s.innerText.replace(/\s+/g, ' ').trim().slice(0, 140)])));
-  console.log(JSON.stringify(panels, null, 1));
-  assert.match(panels.now, /^now 1\.9\s?kW from the grid 1\.6 kW of it/);
-  assert.match(panels.price, /price 1\.85\s?SEK\/kWh Nord Pool SE3 · cheapest hour from/);
-  assert.match(panels.today, /today [\d.]+\s?kWh from the grid since midnight · [\d.]+ SEK/);
-  assert.match(panels.rooms, /Hallway 900 W.*not in a room 562 W/);
-  assert.match(panels.devices, /devices today Heat pump/);
-  const tree = await ev(() => [...window.card.shadowRoot.querySelectorAll('.en.devices .erow')].map((r) => `${r.classList.contains('child') ? '  ' : ''}${r.querySelector('.ename').textContent}`));
-  console.log('devices:', tree.join(' | '));
+  await page.waitForTimeout(1500);
+  const tiles = await ev(() => Object.fromEntries([...window.card.shadowRoot.querySelectorAll('.etile')].map((t) => [t.dataset.tile, t.innerText.replace(/\s+/g, ' ').trim().slice(0, 120)])));
+  console.log(JSON.stringify(tiles, null, 1));
+  assert.deepEqual(Object.keys(tiles), ['now', 'power', 'pricenow', 'prices', 'today', 'hours', 'days', 'rooms', 'devices', 'check']);
+  assert.match(tiles.now, /1\.9 kW 0 2\.5 kW from the grid/);
+  assert.match(tiles.pricenow, /1\.85 SEK\/kWh cheap dear/);
+  assert.match(tiles.today, /kWh from the grid [\d.]+\s?SEK [▲▼] \d+% on yesterday by now/);
+  assert.match(tiles.days, /7 days [\d.]+ kWh \d+ SEK 30 days/);
+  assert.match(tiles.rooms, /Hallway 900 W.*not in a room 562 W/);
+  assert.match(tiles.check, /4 to look at 1 not working · 3 not counted/);
+  const shape = await ev(() => ({
+    dials: window.card.shadowRoot.querySelectorAll('.etile .edial svg.gauge').length,
+    hours: window.card.shadowRoot.querySelectorAll('[data-tile="hours"] .eslot').length,
+    ghosts: window.card.shadowRoot.querySelectorAll('[data-tile="hours"] .eghost').length,
+    power: window.card.shadowRoot.querySelectorAll('[data-tile="power"] .ehit').length,
+    days: window.card.shadowRoot.querySelectorAll('[data-tile="days"] .eslot').length,
+  }));
+  console.log('charts:', JSON.stringify(shape));
+  assert.equal(shape.dials, 2);
+  assert.equal(shape.hours, 24);
+  assert.equal(shape.ghosts, 24, "yesterday's hours behind today's");
+  assert.ok(shape.power > 250, 'five-minute power over the day');
+  assert.equal(shape.days, 30);
+  const tree = await ev(() => [...window.card.shadowRoot.querySelectorAll('[data-tile="devices"] .erow')].map((r) => `${r.classList.contains('child') ? '  ' : ''}${r.querySelector('.ename').textContent}`));
   assert.ok(tree.includes('  Sofa lamp'), 'the lamp sits inside the TV plug');
-  const bars = await ev(() => window.card.shadowRoot.querySelectorAll('.en.today .ebarslot').length);
-  assert.equal(bars, 24);
+  // Hover a bar: the tooltip says which hour and how much.
+  const box = await ev(() => { const r = window.card.shadowRoot.querySelector('[data-tile="hours"] .eslot:nth-child(8) .ehit').getBoundingClientRect(); return [r.x + r.width / 2, r.y + r.height / 2]; });
+  await page.mouse.move(box[0], box[1]);
+  await page.waitForTimeout(100);
+  const tip = await ev(() => { const t = window.card.shadowRoot.querySelector('.etip'); return t.hidden ? '' : t.textContent; });
+  console.log('tooltip:', tip);
+  assert.match(tip, /^07:00–08:00 · today [\d.]+ kWh · yesterday [\d.]+ kWh$/);
+  await page.mouse.move(5, 5);
   await page.screenshot({ path: `${OUT}/energy-tab.png` });
 
+  // The check: the renamed lamp sensor; the fridge can be added, the dehumidifier
+  // has no energy sensor; the desk plug's second integration is left out.
+  await ev(() => window.card.shadowRoot.querySelector('[data-echeck]').click());
+  await page.waitForTimeout(400);
+  const check = await ev(() => [...window.card.shadowRoot.querySelectorAll('.echeckpage .placerow')].map((r) => [r.querySelector('.ename').textContent, !!r.querySelector('[data-ecadd]'), r.innerText.includes('Integral'), r.innerText.includes('reads the same')]));
+  console.log('check:', JSON.stringify(check));
+  assert.deepEqual(check, [['Old lamp', false, false, false], ['Dehumidifier Power', false, true, false], ['Fridge', true, false, false], ['Desk Plug (cloud) Power', false, false, true]]);
+  await page.screenshot({ path: `${OUT}/energy-check.png` });
+  await ev(() => window.card.shadowRoot.querySelector('[data-ecadd="fridge_plug"]').click());
+  await page.waitForTimeout(300);
+  await ev(() => [...window.card.shadowRoot.querySelectorAll('.layer button, .overlay button')].find((b) => b.textContent.trim() === 'add').click());
+  await page.waitForTimeout(800);
+  const saved = await ev(() => window.hass.ws.filter((m) => m.type === 'energy/save_prefs').map((m) => m.device_consumption[m.device_consumption.length - 1]));
+  console.log('saved:', JSON.stringify(saved));
+  assert.deepEqual(saved, [{ stat_consumption: 'sensor.fridge_energy', name: 'Fridge', stat_rate: 'sensor.fridge_power' }]);
+  const left = await ev(() => [...window.card.shadowRoot.querySelectorAll('.echeckpage .placerow .ename')].map((n) => n.textContent));
+  assert.ok(!left.includes('Fridge'), 'counted now, so off the list');
+  await ev(() => window.card._close());
+  await page.waitForTimeout(300);
+
   // Not in a room: the server gets a room; the YAML heater can't have one.
-  await ev(() => window.card.shadowRoot.querySelector('[data-unplaced]').click());
+  await ev(() => window.card.shadowRoot.querySelector('.etile [data-unplaced]').click());
   await page.waitForTimeout(400);
   const rows = await ev(() => [...window.card.shadowRoot.querySelectorAll('.placerow')].map((r) => [r.querySelector('.ename').textContent, !!r.querySelector('select'), !!r.querySelector('.enote')]));
   console.log('not in a room:', JSON.stringify(rows));
@@ -54,7 +94,7 @@ const URL = (process.env.URL || 'http://127.0.0.1:18766/tools/harness/') + '?bar
   assert.deepEqual(after.rows, ['Garage heater']);
   await ev(() => window.card._close());
   await page.waitForTimeout(300);
-  const office = await ev(() => [...window.card.shadowRoot.querySelectorAll('.en.rooms .erow')].map((r) => r.innerText.replace(/\s+/g, ' ').trim()));
+  const office = await ev(() => [...window.card.shadowRoot.querySelectorAll('[data-tile="rooms"] .erow')].map((r) => r.innerText.replace(/\s+/g, ' ').trim()));
   console.log('rooms now:', JSON.stringify(office));
   assert.ok(office.some((r) => /^Office 198 W/.test(r)), 'the server joined the office');
 
@@ -70,7 +110,7 @@ const URL = (process.env.URL || 'http://127.0.0.1:18766/tools/harness/') + '?bar
   const phone = await open({ width: 360, height: 740 }, { deviceScaleFactor: 2, isMobile: true, hasTouch: true });
   await phone.evaluate(() => window.card._goTab('energy'));
   await phone.waitForTimeout(1200);
-  const fit = await phone.evaluate(() => ({ page: document.documentElement.scrollWidth, widest: Math.max(...[...window.card.shadowRoot.querySelectorAll('.en')].map((s) => Math.round(s.getBoundingClientRect().right))), hub: Math.round([...window.card.shadowRoot.querySelectorAll('.hub button')].pop().getBoundingClientRect().right) }));
+  const fit = await phone.evaluate(() => ({ page: document.documentElement.scrollWidth, widest: Math.max(...[...window.card.shadowRoot.querySelectorAll('.etile')].map((s) => Math.round(s.getBoundingClientRect().right))) }));
   console.log('phone:', JSON.stringify(fit));
   assert.ok(fit.page <= 360 && fit.widest <= 360);
   await phone.screenshot({ path: `${OUT}/energy-phone.png`, fullPage: false });

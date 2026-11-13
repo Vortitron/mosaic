@@ -49,8 +49,10 @@ const frac = (v, lo, hi) => (typeof v === 'number' && Number.isFinite(v) && hi >
 
 // value: the reading (the room's temperature); target: the setting, if any;
 // big: the text in the middle (the setting by default); small: under it.
-export function gaugeSvg({ value = null, target = null, min = 0, max = 100, big = null, small = '', unit = '', state = '', label = '' } = {}) {
-  const [lo, hi] = gaugeRange({ value, target, min, max });
+// range: a fixed [lo, hi] for the arc (a meter's 0 to its peak), instead of
+// one fitted round the reading. ends: the words at the arc's two ends.
+export function gaugeSvg({ value = null, target = null, min = 0, max = 100, big = null, small = '', unit = '', state = '', label = '', range = null, ends = null } = {}) {
+  const [lo, hi] = range || gaugeRange({ value, target, min, max });
   const fv = frac(value, lo, hi);
   const ft = frac(target, lo, hi);
   const R = 40;
@@ -70,6 +72,6 @@ export function gaugeSvg({ value = null, target = null, min = 0, max = 100, big 
     + mark
     + `<text class="gbig" x="50" y="${small ? 50 : 56}">${esc(middle)}</text>`
     + (small ? `<text class="gsmall" x="50" y="66">${esc(small)}</text>` : '')
-    + `<text class="gend" x="${r2(at(0, R)[0])}" y="88">${lo}</text><text class="gend" x="${r2(at(1, R)[0])}" y="88">${hi}</text>`
+    + `<text class="gend" x="${r2(at(0, R)[0])}" y="88">${esc(ends ? ends[0] : lo)}</text><text class="gend" x="${r2(at(1, R)[0])}" y="88">${esc(ends ? ends[1] : hi)}</text>`
     + '</svg>';
 }

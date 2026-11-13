@@ -230,3 +230,70 @@ export function deviceTree(prefs, totals) {
 
 // "0.4 kWh", "23 kWh".
 export const kwhText = (v) => (v === null || v === undefined ? '–' : v >= 100 ? `${Math.round(v)} kWh` : v >= 10 ? `${v.toFixed(1)} kWh` : `${v.toFixed(2)} kWh`);
+
+// --- what the Energy dashboard is missing ------------------------------------------
+
+// A counter that is another counter cut into days, weeks, months (utility
+// meters), or what a heat pump makes rather than uses: not a device of its own.
+const DERIVED = /daily|weekly|monthly|annual|yearly|today|yesterday|past.hour|produced|production|heat.produced|cooling|heating|generation|charged|discharged|calories/;
+const isEnergy = (hass, id) => {
+  const st = id.startsWith('sensor.') && hass.states[id];
+  return !!st && st.attributes.device_class === 'energy' && ['total', 'total_increasing'].includes(st.attributes.state_class) && /wh$/i.test(st.attributes.unit_of_measurement || '');
+};
+const devOf = (hass, id) => (hass.entities && hass.entities[id] && hass.entities[id].device_id) || null;
+
+// { problems: [{ name, id, why }], missing: [{ key, name, power, energy, w, area, like }] }
+// problems: Energy dashboard entries whose sensors have gone or stopped.
+// missing: things using power that nothing in the Energy dashboard counts,
+// with the energy sensor to count them by (or none: power only), and `like`
+// when their reading is the same as something already counted (two
+// integrations for one plug, most likely).
+export function energyCheck(hass, prefs) {
+  const problems = [];
+  const used = new Set();
+  const src = energySources(prefs);
+  for (const g of src.grid) for (const id of [g.from, g.to, g.price, g.cost, g.rate]) if (id) used.add(id);
+  for (const s of [...src.solar, ...src.battery]) for (const id of [s.from, s.to, s.rate]) if (id) used.add(id);
+  const tracked = [];
+  for (const d of (prefs && prefs.device_consumption) || []) {
+    const name = d.name || d.stat_consumption;
+    for (const id of [d.stat_consumption, d.stat_rate]) if (id) used.add(id);
+    if (d.stat_rate) {
+      const st = hass.states[d.stat_rate];
+      if (!st) problems.push({ name, id: d.stat_rate, why: 'its power sensor is gone (renamed or removed), so it reads nothing now' });
+      else if (st.state === 'unavailable') problems.push({ name, id: d.stat_rate, why: 'its power sensor is unavailable' });
+      else tracked.push({ name, w: watts(hass, d.stat_rate) });
+    }
+    if (/^sensor\./.test(d.stat_consumption) && !hass.states[d.stat_consumption]) problems.push({ name, id: d.stat_consumption, why: 'its energy sensor is gone, so it counts nothing new' });
+  }
+  // Devices any of whose entities the dashboard already uses, and meters.
+  const usedDevices = new Set([...used].map((id) => devOf(hass, id)).filter(Boolean));
+  const meterDevices = new Set(Object.keys(hass.states).filter((id) => isPower(hass, id) && /grid|meter|p1/.test(words(`${id.split('.')[1]} ${nameOf(hass, id)}`))).map((id) => devOf(hass, id)).filter(Boolean));
+  const by = new Map();
+  for (const id of Object.keys(hass.states)) {
+    if (!isPower(hass, id) || used.has(id) || !looksLikeUse(hass, id)) continue;
+    if (hass.states[id].attributes.state_class !== 'measurement') continue;
+    const w = watts(hass, id);
+    if (w === null) continue;
+    const dev = devOf(hass, id);
+    if (dev && (usedDevices.has(dev) || meterDevices.has(dev))) continue;
+    const key = dev || id;
+    const had = by.get(key);
+    if (had && had.w >= w) continue;
+    const energy = dev ? Object.keys(hass.states).filter((e) => devOf(hass, e) === dev && isEnergy(hass, e) && !DERIVED.test(e)).sort((a, b) => a.length - b.length)[0] || null : null;
+    const device = dev && hass.devices ? hass.devices[dev] : null;
+    const area = areaOf(hass, id);
+    const like = w > 1 ? tracked.find((t) => t.w !== null && Math.abs(t.w - w) < Math.max(0.15, w * 0.005)) : null;
+    by.set(key, { key, name: (device && (device.name_by_user || device.name)) || nameOf(hass, id), power: id, energy, w, area: area ? area.area_id : null, like: like ? like.name : null });
+  }
+  const missing = [...by.values()].sort((a, b) => (a.like ? 1 : 0) - (b.like ? 1 : 0) || b.w - a.w);
+  return { problems, missing };
+}
+
+// The Energy dashboard's devices with one more: what energy/save_prefs takes.
+export function withDevice(prefs, { energy, power, name }) {
+  const list = [...((prefs && prefs.device_consumption) || [])];
+  if (list.some((d) => d.stat_consumption === energy)) return list;
+  list.push({ stat_consumption: energy, name, ...(power ? { stat_rate: power } : {}) });
+  return list;
+}

@@ -196,3 +196,48 @@ test("a camera's time is when its picture last changed", () => {
   assert.equal(stampText(moved, at + 20000), '14:03:47');
   assert.equal(stampText(moved, at + 86400e3), '13 nov 14:03', 'yesterday’s says its day');
 });
+
+import { energyCheck, withDevice } from '../src/power.js';
+import { niceMax } from '../src/energy.js';
+
+test('the energy check: what is broken, and what nothing counts', () => {
+  const states = {};
+  const entities = {};
+  const devices = {};
+  const s = (id, state, attrs, dev = null) => {
+    states[id] = { state, attributes: attrs };
+    entities[id] = { device_id: dev };
+    if (dev) devices[dev] = { id: dev, name: dev };
+  };
+  const P = (w) => ({ device_class: 'power', unit_of_measurement: 'W', state_class: 'measurement' });
+  const E = { device_class: 'energy', unit_of_measurement: 'kWh', state_class: 'total_increasing' };
+  // GamlaBio's: Bio Stuff counts by a plug whose power sensor was renamed.
+  s('sensor.smart_plug_energy', '52.7', E, 'smart plug');
+  s('sensor.bio_power_power', '55.2', P(), 'bio');
+  // The Bio Amp, counted; and smart plug 4, reading the same: the same plug twice.
+  s('sensor.energy_monitoring_smartplug_power', '34.9', P(), 'amp');
+  s('sensor.bio_amp_energy', '3', E, 'amp');
+  s('sensor.smart_plug_4_power', '34.9', P(), 'pool');
+  s('sensor.airfry_total_energy', '1.85', E, 'pool');
+  // A fridge nobody counts, with an energy counter and its weekly cut.
+  s('sensor.fridge_power', '62', P(), 'fridge');
+  s('sensor.fridge_energy', '310', E, 'fridge');
+  s('sensor.fridge_weekly_energy', '3', E, 'fridge');
+  // A P1 meter: not a thing using power.
+  s('sensor.p1_active_power', '900', P(), 'p1');
+  const prefs = { device_consumption: [
+    { stat_consumption: 'sensor.smart_plug_energy', name: 'Bio Stuff', stat_rate: 'sensor.smart_plug_power' },
+    { stat_consumption: 'sensor.bio_amp_energy', name: 'Bio Amp', stat_rate: 'sensor.energy_monitoring_smartplug_power' },
+  ] };
+  const c = energyCheck({ states, entities, devices }, prefs);
+  assert.deepEqual(c.problems.map((p) => [p.name, p.id]), [['Bio Stuff', 'sensor.smart_plug_power']]);
+  assert.deepEqual(c.missing.map((m) => [m.name, m.energy, m.like]), [['fridge', 'sensor.fridge_energy', null], ['bio', null, null], ['pool', 'sensor.airfry_total_energy', 'Bio Amp']]);
+  const list = withDevice(prefs, { energy: 'sensor.fridge_energy', power: 'sensor.fridge_power', name: 'Fridge' });
+  assert.equal(list.length, 3);
+  assert.deepEqual(list[2], { stat_consumption: 'sensor.fridge_energy', name: 'Fridge', stat_rate: 'sensor.fridge_power' });
+  assert.equal(withDevice({ device_consumption: list }, { energy: 'sensor.fridge_energy', name: 'Fridge' }).length, 3, 'never twice');
+});
+
+test("a dial's top is a round number above the reading", () => {
+  assert.deepEqual([niceMax(1890), niceMax(2100), niceMax(240), niceMax(5100), niceMax(0)], [2000, 2500, 250, 10000, 1]);
+});
