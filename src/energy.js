@@ -22,7 +22,7 @@ const tsOf = (r) => (typeof r.start === 'number' ? r.start : Date.parse(r.start)
 export function niceMax(v) {
   if (!(v > 0)) return 1;
   const p = 10 ** Math.floor(Math.log10(v));
-  return [1, 2, 2.5, 5, 10].map((m) => m * p).find((m) => m >= v);
+  return [1, 1.5, 2, 2.5, 3, 4, 5, 6, 8, 10].map((m) => m * p).find((m) => m >= v);
 }
 
 // Bars along a span: `ghost` (yesterday's, say) drawn as outlines behind,
@@ -148,11 +148,26 @@ export const energyMethods = {
     if (this._tab === 'energy') this._energyRefresh();
   },
 
+  // Tiles as big as the screen allows: four units across a phone, about
+  // 140 px a unit on a desktop. Square units, as on Start.
+  _energySize() {
+    const box = this.shadowRoot.querySelector('.tabpane.energy .etiles');
+    if (!box || !box.clientWidth) return;
+    const cs = getComputedStyle(box);
+    const inner = box.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight);
+    const gap = parseFloat(cs.columnGap) || 6;
+    const desk = this.shadowRoot.querySelector('.root.desk');
+    const cols = desk ? Math.max(6, Math.round(inner / 140)) : 4;
+    box.style.setProperty('--ecols', String(cols));
+    box.style.setProperty('--eunit', `${Math.floor((inner - gap * (cols - 1)) / cols)}px`);
+  },
+
   // Draw the tiles; each keeps its html, so a reading moving redraws only its tile.
   _energyRefresh() {
     const pane = this.shadowRoot.querySelector('.tabpane.energy');
     const box = pane && pane.querySelector('.etiles');
     if (!box) return;
+    this._energySize();
     if (this._energyStatsAt && Date.now() - this._energyStatsAt > STATS_EVERY) this._energyStats();
     const tiles = [this._etNow(), this._etPower(), this._etPriceDial(), this._etPrices(), this._etToday(), this._etHours(), this._etDays(), this._etRooms(), this._etDevices(), this._etCheck()].filter(Boolean);
     const keys = tiles.map((t) => /data-tile="([^"]+)"/.exec(t)[1]).join(',');

@@ -280,10 +280,21 @@ export function energyCheck(hass, prefs) {
     const key = dev || id;
     const had = by.get(key);
     if (had && had.w >= w) continue;
-    const energy = dev ? Object.keys(hass.states).filter((e) => devOf(hass, e) === dev && isEnergy(hass, e) && !DERIVED.test(e)).sort((a, b) => a.length - b.length)[0] || null : null;
+    // Its energy counter: on the same device, or named after the power
+    // sensor the way an Integral or PowerCalc helper names one.
+    const named = [`${id}_energy`, id.replace(/_power$/, '_energy')].find((e) => e !== id && isEnergy(hass, e)) || null;
+    const energy = (dev ? Object.keys(hass.states).filter((e) => devOf(hass, e) === dev && isEnergy(hass, e) && !DERIVED.test(e)).sort((a, b) => a.length - b.length)[0] : null) || named;
     const device = dev && hass.devices ? hass.devices[dev] : null;
     const area = areaOf(hass, id);
-    const like = w > 1 ? tracked.find((t) => t.w !== null && Math.abs(t.w - w) < Math.max(0.15, w * 0.005)) : null;
+    // The same reading as something counted (one plug, two integrations),
+    // or as two counted things together (a server and its two supplies).
+    const near = (v) => Math.abs(v - w) < Math.max(0.15, w * 0.005);
+    let like = w > 1 ? tracked.find((t) => t.w !== null && near(t.w)) : null;
+    if (!like && w > 1) {
+      for (let i = 0; i < tracked.length && !like; i++) for (let j = i + 1; j < tracked.length && !like; j++) {
+        if (tracked[i].w > 0.5 && tracked[j].w > 0.5 && near(tracked[i].w + tracked[j].w)) like = { name: `${tracked[i].name} and ${tracked[j].name} together` };
+      }
+    }
     by.set(key, { key, name: (device && (device.name_by_user || device.name)) || nameOf(hass, id), power: id, energy, w, area: area ? area.area_id : null, like: like ? like.name : null });
   }
   const missing = [...by.values()].sort((a, b) => (a.like ? 1 : 0) - (b.like ? 1 : 0) || b.w - a.w);

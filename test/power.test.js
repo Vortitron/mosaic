@@ -223,21 +223,31 @@ test('the energy check: what is broken, and what nothing counts', () => {
   s('sensor.fridge_power', '62', P(), 'fridge');
   s('sensor.fridge_energy', '310', E, 'fridge');
   s('sensor.fridge_weekly_energy', '3', E, 'fridge');
+  // A server whose own reading is its two counted supplies added up, its
+  // energy counter a helper named after the power sensor, on no device.
+  s('sensor.psu_a_power', '74', P(), 'psu a');
+  s('sensor.psu_b_power', '74', P(), 'psu b');
+  s('sensor.r620_power_usage', '148', P(), 'r620');
+  s('sensor.r620_power_usage_energy', '86', E);
+  s('sensor.psu_a_energy', '40', E, 'psu a');
+  s('sensor.psu_b_energy', '40', E, 'psu b');
   // A P1 meter: not a thing using power.
   s('sensor.p1_active_power', '900', P(), 'p1');
   const prefs = { device_consumption: [
     { stat_consumption: 'sensor.smart_plug_energy', name: 'Bio Stuff', stat_rate: 'sensor.smart_plug_power' },
     { stat_consumption: 'sensor.bio_amp_energy', name: 'Bio Amp', stat_rate: 'sensor.energy_monitoring_smartplug_power' },
+    { stat_consumption: 'sensor.psu_a_energy', name: 'PSU A', stat_rate: 'sensor.psu_a_power' },
+    { stat_consumption: 'sensor.psu_b_energy', name: 'PSU B', stat_rate: 'sensor.psu_b_power' },
   ] };
   const c = energyCheck({ states, entities, devices }, prefs);
   assert.deepEqual(c.problems.map((p) => [p.name, p.id]), [['Bio Stuff', 'sensor.smart_plug_power']]);
-  assert.deepEqual(c.missing.map((m) => [m.name, m.energy, m.like]), [['fridge', 'sensor.fridge_energy', null], ['bio', null, null], ['pool', 'sensor.airfry_total_energy', 'Bio Amp']]);
+  assert.deepEqual(c.missing.map((m) => [m.name, m.energy, m.like]), [['fridge', 'sensor.fridge_energy', null], ['bio', null, null], ['r620', 'sensor.r620_power_usage_energy', 'PSU A and PSU B together'], ['pool', 'sensor.airfry_total_energy', 'Bio Amp']]);
   const list = withDevice(prefs, { energy: 'sensor.fridge_energy', power: 'sensor.fridge_power', name: 'Fridge' });
-  assert.equal(list.length, 3);
-  assert.deepEqual(list[2], { stat_consumption: 'sensor.fridge_energy', name: 'Fridge', stat_rate: 'sensor.fridge_power' });
-  assert.equal(withDevice({ device_consumption: list }, { energy: 'sensor.fridge_energy', name: 'Fridge' }).length, 3, 'never twice');
+  assert.equal(list.length, 5);
+  assert.deepEqual(list[4], { stat_consumption: 'sensor.fridge_energy', name: 'Fridge', stat_rate: 'sensor.fridge_power' });
+  assert.equal(withDevice({ device_consumption: list }, { energy: 'sensor.fridge_energy', name: 'Fridge' }).length, 5, 'never twice');
 });
 
 test("a dial's top is a round number above the reading", () => {
-  assert.deepEqual([niceMax(1890), niceMax(2100), niceMax(240), niceMax(5100), niceMax(0)], [2000, 2500, 250, 10000, 1]);
+  assert.deepEqual([niceMax(1890), niceMax(2100), niceMax(240), niceMax(5250), niceMax(0)], [2000, 2500, 250, 6000, 1]);
 });

@@ -48,7 +48,7 @@ import { calendarMethods } from './calendar.js';
 import { refreshCams, shapeOf } from './cams.js';
 import { energyMethods } from './energy.js';
 
-const VERSION = '0.7.1-beta.8';
+const VERSION = '0.7.1-beta.9';
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
 const reduced = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
 const ON = ['on', 'open', 'opening', 'unlocked', 'playing', 'home', 'heat', 'cool', 'heat_cool', 'auto', 'cleaning'];
@@ -647,6 +647,7 @@ class MosaicStart extends HTMLElement {
     const W = this.clientWidth || window.innerWidth;
     const wide = W >= 900;
     root.classList.toggle('desk', wide);
+    if (this._tab === 'energy') this._energySize();
     let cols;
     let unit;
     const gap = 5;

@@ -515,8 +515,8 @@ button { font: inherit; color: inherit; background: none; border: 0; padding: 0;
    and charts in white on them. Tiles are 2, 4 units wide and 1-3 tall; on a
    phone the wide ones take the full width. */
 .tabpane.energy.on { overflow-y: auto; overscroll-behavior-y: contain; position: relative; }
-.etiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(76px, 1fr)); grid-auto-rows: 76px; grid-auto-flow: row dense; gap: 6px; padding: 10px var(--pad) calc(40px + env(safe-area-inset-bottom)); }
-.desk .etiles { padding: 16px 16px 40px; grid-template-columns: repeat(auto-fill, minmax(84px, 1fr)); grid-auto-rows: 84px; gap: 8px; }
+.etiles { display: grid; grid-template-columns: repeat(var(--ecols, 4), minmax(0, 1fr)); grid-auto-rows: var(--eunit, 80px); grid-auto-flow: row dense; gap: 6px; padding: 10px var(--pad) calc(40px + env(safe-area-inset-bottom)); }
+.desk .etiles { padding: 16px 16px 40px; gap: 8px; }
 .etile { grid-column: span 2; grid-row: span 1; background: var(--accent); color: #fff; padding: 10px 12px; position: relative; overflow: hidden; display: flex; flex-direction: column; min-width: 0; animation: etileIn 400ms cubic-bezier(.1,.9,.2,1) both; }
 .etile.w4 { grid-column: span 4; }
 .etile.h2 { grid-row: span 2; }
@@ -531,6 +531,8 @@ button { font: inherit; color: inherit; background: none; border: 0; padding: 0;
 .edial { flex: 1 1 auto; min-height: 0; display: flex; align-items: center; justify-content: center; }
 .edial .gauge { width: 100%; height: 100%; max-height: 100%; color: #fff; }
 .edial .gauge .gbig { font-size: 19px; }
+.desk .etile h3 { font-size: 14px; }
+.desk .ebig { font-size: 48px; }
 .esplit { display: flex; flex-wrap: wrap; gap: 2px 12px; font-size: 12px; opacity: .9; flex: 0 0 auto; }
 .esplit b, .efacts b { font-weight: 600; }
 .efacts { display: flex; flex-wrap: wrap; gap: 2px 14px; font-size: 13px; opacity: .92; margin: 2px 0 4px; flex: 0 0 auto; }
@@ -538,7 +540,9 @@ button { font: inherit; color: inherit; background: none; border: 0; padding: 0;
 .ebig small { font-size: 15px; font-weight: 400; opacity: .85; }
 .ebig.ecost { font-size: 28px; }
 .efill { flex: 1 1 auto; }
-.ecap { text-align: center; font-size: 13px; opacity: .9; margin-top: -4px; flex: 0 0 auto; }
+.ecap { text-align: center; font-size: 13px; opacity: .9; margin-top: 4px; flex: 0 0 auto; }
+.root:not(.desk) .ebig.ecount { font-size: 24px; }
+.root:not(.desk) .etile:not(.h2):not(.h3) .esub { font-size: 12px; }
 .ebig.ecount { font-size: 30px; margin-top: 0; }
 .etile:not(.h2):not(.h3) { padding: 7px 12px 6px; }
 .eline1 { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -571,7 +575,6 @@ button { font: inherit; color: inherit; background: none; border: 0; padding: 0;
 .etile .erow.quiet .ebarline::before { background: rgba(255,255,255,.55); }
 @media (hover: hover) { .etile button.erow:hover .ename { text-decoration: underline; } }
 .etip { position: absolute; z-index: 5; pointer-events: none; background: var(--bg); color: var(--fg); border: 1px solid var(--line); padding: 4px 8px; font-size: 12px; white-space: nowrap; font-variant-numeric: tabular-nums; }
-.root:not(.desk) .etiles { grid-template-columns: repeat(4, 1fr); grid-auto-rows: calc((100vw - var(--pad) * 2 - 18px) / 4); }
 .root:not(.desk) .etile.w2 { grid-column: span 2; }
 .root:not(.desk) .etile.w4 { grid-column: span 4; }
 .root:not(.desk) .etile.h3 { grid-row: span 4; }
