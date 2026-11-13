@@ -7,6 +7,8 @@
 // in metres, y downwards. Rooms without a level are on the main floor.
 
 import { areaClimate } from './model.js';
+import { lastShown, picturesOf, shapeOf } from './cams.js';
+import { burn, wattsText } from './power.js';
 
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
 const norm = (s) => String(s || '').toLowerCase().replace(/[^a-z0-9åäö]+/g, '');
@@ -78,8 +80,9 @@ export function roomState(hass, area, entitiesByArea) {
   return { lit, playing, known: true };
 }
 
-// What the plan shows: which rooms are lit, how warm, or how damp.
-export const PLAN_MODES = ['lights', 'temperature', 'humidity', 'people'];
+// What the plan shows: which rooms are lit, how warm, how damp, who is where,
+// what the cameras see (and what is playing), and what is using power.
+export const PLAN_MODES = ['lights', 'temperature', 'humidity', 'people', 'cameras', 'energy'];
 
 // Colours for the warm and damp views: cold blue through green to hot red;
 // dry pale to damp deep blue.
@@ -94,7 +97,33 @@ export function damp(h) {
 
 // A storey's shapes, and its labels as points: drawn flat by levelSvg, or
 // tilted into a stack by stackSvg (where the labels stay upright).
-function levelParts(level, hass, entitiesByArea, { highlight = null, labels = true, mode = 'lights', slab = false, who = [] } = {}) {
+// A room's pictures laid on its floor, in a grid that wastes least of it:
+// [{ id, x, y, w, h }], in plan metres.
+export function pictureGrid(ids, box) {
+  const n = ids.length;
+  if (!n || box.w <= 0 || box.h <= 0) return [];
+  const gap = Math.min(box.w, box.h) * 0.04;
+  let best = null;
+  for (let cols = 1; cols <= n; cols++) {
+    const rows = Math.ceil(n / cols);
+    const cw = (box.w - gap * (cols - 1)) / cols;
+    const ch = (box.h - gap * (rows - 1)) / rows;
+    // Each picture as big as fits its cell at its own shape.
+    const sizes = ids.map((id) => { const r = shapeOf(id); return Math.min(cw, ch * r) * Math.min(ch, cw / r); });
+    const area = sizes.reduce((a, b) => a + b, 0);
+    if (!best || area > best.area) best = { cols, rows, cw, ch, area };
+  }
+  return ids.map((id, i) => {
+    const col = i % best.cols;
+    const row = Math.floor(i / best.cols);
+    const r = shapeOf(id);
+    const w = Math.min(best.cw, best.ch * r);
+    const h = w / r;
+    return { id, x: box.x + col * (best.cw + gap) + (best.cw - w) / 2, y: box.y + row * (best.ch + gap) + (best.ch - h) / 2, w, h };
+  });
+}
+
+function levelParts(level, hass, entitiesByArea, { highlight = null, labels = true, mode = 'lights', slab = false, who = [], power = null } = {}) {
   const shapes = [];
   const marks = [];
   const rooms = [...level.rooms].sort((a, b) => (a.outdoor ? 0 : 1) - (b.outdoor ? 0 : 1));
@@ -123,26 +152,42 @@ function levelParts(level, hass, entitiesByArea, { highlight = null, labels = tr
     const lights = mode === 'lights';
     const busy = mode === 'people' && occupied(area);
     const c = climateOf(area);
-    const value = mode === 'temperature' ? c.temp : mode === 'humidity' ? c.hum : null;
-    const fill = value === null ? '' : mode === 'temperature' ? warmth(value) : damp(value);
+    const use = mode === 'energy' && area && power ? power.get(area.area_id) : null;
+    const value = mode === 'temperature' ? c.temp : mode === 'humidity' ? c.hum : use ? use.w : null;
+    const fill = value === null ? '' : mode === 'temperature' ? warmth(value) : mode === 'energy' ? burn(value) : damp(value);
+    const pics = mode === 'cameras' && area ? picturesOf(hass, entitiesByArea.get(area.area_id) || []) : [];
     const isHere = highlight && area && area.area_id === highlight;
     const cls = ['room', r.outdoor ? 'out' : '', lights && s.lit ? 'lit' : '', lights && s.playing ? 'playing' : '', busy ? 'occupied' : '', area ? 'known' : '', fill ? 'measured' : '', isHere ? 'here' : '', highlight && !isHere ? 'dim' : ''].filter(Boolean).join(' ');
-    const say = lights ? (s.lit ? `, ${s.lit} light${s.lit === 1 ? '' : 's'} on` : '') : value !== null ? `, ${value}${mode === 'temperature' ? '°' : '%'}` : '';
+    const text = value === null ? null : mode === 'energy' ? wattsText(value) : `${Math.round(value * 10) / 10}${mode === 'temperature' ? '°' : '%'}`;
+    const say = lights ? (s.lit ? `, ${s.lit} light${s.lit === 1 ? '' : 's'} on` : '') : text !== null ? `, ${text}` : pics.length ? `, ${pics.length} picture${pics.length === 1 ? '' : 's'}` : '';
     const attrs = area ? ` data-area="${esc(area.area_id)}" role="button" tabindex="0" aria-label="${esc(area.name)}${say}"` : '';
-    shapes.push(`<g class="${cls}"${attrs}${fill ? ` style="--fill:${fill}"` : ''}>${r.rects.map((q) => rect(q)).join('')}</g>`);
-    if (!labels) continue;
     // The name goes in the room's biggest rectangle, sized to fit it.
     const big = [...r.rects].sort((p, q) => Math.abs((q[2] - q[0]) * (q[3] - q[1])) - Math.abs((p[2] - p[0]) * (p[3] - p[1])))[0];
     const w = Math.abs(big[2] - big[0]);
     const h = Math.abs(big[3] - big[1]);
     const name = (area && area.name) || r.name || r.id;
-    const on = (lights && s.lit) || value !== null || isHere || busy;
-    // Outside (a garden wrapping the house): a smaller, quieter name.
     const size = Math.max(0.28, Math.min(r.outdoor ? 0.5 : 0.75, h * 0.3, (w * 1.6) / Math.max(4, name.length)));
-    const reading = value === null ? null : `${Math.round(value * 10) / 10}${mode === 'temperature' ? '°' : '%'}`;
+    // Cameras and what is playing, laid on the floor of the room (the name
+    // keeps a strip at the bottom). Each picture is a box refreshCams fills.
+    let tiles = '';
+    if (pics.length) {
+      const inset = Math.min(w, h) * 0.06;
+      const x0 = Math.min(big[0], big[2]) + inset;
+      const y0 = Math.min(big[1], big[3]) + inset;
+      const strip = labels ? size * 1.5 : 0;
+      tiles = pictureGrid(pics, { x: x0, y: y0, w: w - inset * 2, h: h - inset * 2 - strip }).map((t) => {
+        const url = lastShown(t.id);
+        return `<g class="camtile" data-cam="${esc(t.id)}"${url ? ` data-url="${esc(url)}"` : ''}><rect class="camback" x="${t.x.toFixed(2)}" y="${t.y.toFixed(2)}" width="${t.w.toFixed(2)}" height="${t.h.toFixed(2)}"/><image class="campic" x="${t.x.toFixed(2)}" y="${t.y.toFixed(2)}" width="${t.w.toFixed(2)}" height="${t.h.toFixed(2)}" preserveAspectRatio="xMidYMid slice"${url ? ` href="${esc(url)}"` : ''}/></g>`;
+      }).join('');
+    }
+    shapes.push(`<g class="${cls}${pics.length ? ' pictured' : ''}"${attrs}${fill ? ` style="--fill:${fill}"` : ''}>${r.rects.map((q) => rect(q)).join('')}${tiles}</g>`);
+    if (!labels) continue;
+    const on = (lights && s.lit) || value !== null || isHere || busy || pics.length > 0;
+    // Outside (a garden wrapping the house): a smaller, quieter name.
+    const reading = text;
     const rsize = reading ? Math.max(0.36, Math.min(1.1, h * 0.38, (w * 1.7) / Math.max(3, reading.length))) : 0;
-    // With people on the plan, a room's name goes to the bottom of the room, out of their way.
-    const low = mode === 'people';
+    // With people (or pictures) on the plan, a room's name goes to the bottom of the room, out of their way.
+    const low = mode === 'people' || pics.length > 0;
     marks.push({ x: Math.min(big[0], big[2]) + w / 2, y: low ? Math.max(big[1], big[3]) - size * 0.9 : Math.min(big[1], big[3]) + h / 2, name, on, size, reading, rsize, out: !!r.outdoor && !on });
   }
   // Markers keep to a size you can see on a big house as well as a small one.
@@ -200,7 +245,7 @@ export function levelSvg(level, hass, entitiesByArea, opts = {}) {
 // (an isometric view), the top floor highest and drawn last, the room names
 // upright over their rooms. One SVG, so it stays sharp and fits exactly.
 export const STACK = { turn: -32, flatten: 0.52, gap: 0.62 };
-export function stackSvg(levels, hass, entitiesByArea, { highlight = null, mode = 'lights', title = 'the house', who = [], hot = null } = {}) {
+export function stackSvg(levels, hass, entitiesByArea, { highlight = null, mode = 'lights', title = 'the house', who = [], hot = null, power = null } = {}) {
   const box = bbox(levels.flatMap((l) => l.rooms));
   const cx = box.x1 + box.w / 2;
   const cy = box.y1 + box.h / 2;
@@ -235,7 +280,7 @@ export function stackSvg(levels, hass, entitiesByArea, { highlight = null, mode 
   // Bottom floor first, so each floor up is drawn over the one below it.
   const layers = levels.map((l, i) => ({ l, i })).reverse().map(({ l, i }) => {
     const dy = i * gap;
-    const { shapes, marks } = levelParts(l, hass, entitiesByArea, { highlight, mode, slab: true, who });
+    const { shapes, marks } = levelParts(l, hass, entitiesByArea, { highlight, mode, slab: true, who, power });
     // The floor's name off its own left-hand corner.
     const leftCorner = spot[i].left;
     // Where this floor is, fixed: what the pointer is tested against, so

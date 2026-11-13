@@ -45,8 +45,9 @@ import { planEditMethods } from './plan-edit.js';
 import { locate } from './locator.js';
 import { gaugeSvg } from './gauge.js';
 import { calendarMethods } from './calendar.js';
+import { refreshCams, shapeOf } from './cams.js';
 
-const VERSION = '0.7.1-beta.4';
+const VERSION = '0.7.1-beta.5';
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
 const reduced = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
 const ON = ['on', 'open', 'opening', 'unlocked', 'playing', 'home', 'heat', 'cool', 'heat_cool', 'auto', 'cleaning'];
@@ -267,6 +268,10 @@ class MosaicStart extends HTMLElement {
     this._ro.observe(this);
     this._tick = setInterval(() => this._flipSome(), 1000);
     this._minute = setInterval(() => this._refresh(), 30000);
+    // Camera stills move on every ten seconds, state changes or not.
+    this._cams = setInterval(() => {
+      if (this._hass && document.visibilityState === 'visible') refreshCams(this.shadowRoot, this._hass);
+    }, 10000);
     this._onKey = (e) => this._key(e);
     // The phone's back button (or gesture) closes what is open on top
     // (a room, an event, a menu) instead of leaving the dashboard.
@@ -294,6 +299,7 @@ class MosaicStart extends HTMLElement {
     if (this._io) this._io.disconnect();
     clearInterval(this._tick);
     clearInterval(this._minute);
+    clearInterval(this._cams);
     window.removeEventListener('keydown', this._onKey);
     window.removeEventListener('popstate', this._onPop);
     if (this._layerWatch) this._layerWatch.disconnect();
@@ -1568,6 +1574,7 @@ class MosaicStart extends HTMLElement {
       page.innerHTML = html;
       this._hydrate(page);
     }
+    refreshCams(app, this._hass);
   }
 
   _roomRow(id, within) {
@@ -1580,7 +1587,10 @@ class MosaicStart extends HTMLElement {
     if (action === 'play_pause') control = `<button class="play" data-act="play_pause" aria-label="play or pause">${st.state === 'playing' ? '&#10074;&#10074;' : '&#9654;'}</button>`;
     else if (canToggle(hass, id)) control = `<button class="toggle ${on ? 'on' : ''}" role="switch" aria-checked="${on}" aria-label="${esc(nameOf(hass, id))}" data-act="${action}"></button>`;
     else if (action === 'run') control = `<button class="play" data-act="run" aria-label="run">&#9654;</button>`;
-    const pic = d === 'camera' && st.attributes.entity_picture ? `<img class="rimg" alt="" src="${esc(st.attributes.entity_picture)}${st.attributes.entity_picture.includes('?') ? '&' : '?'}t=${Math.floor(Date.now() / 10000)}">` : '';
+    // A camera: a box of a fixed shape that refreshCams fills and fades the
+    // next still into, so nothing below it moves. Its url is not in here, so
+    // a new still (or a new token) does not redraw the page. Tap: live view.
+    const pic = d === 'camera' && st.state !== 'unavailable' ? `<button class="rcam" data-cam="${esc(id)}" data-more="${esc(id)}" aria-label="${esc(nameOf(hass, id))}: live view" style="aspect-ratio:${shapeOf(id)}"></button>` : '';
     let sub = stateText(hass, id);
     if (d === 'light' && on && st.attributes.brightness) sub += ` · ${Math.round((st.attributes.brightness / 255) * 100)}%`;
     if (d === 'media_player' && st.attributes.media_title) sub += ` · ${st.attributes.media_title}`;
@@ -1593,6 +1603,11 @@ class MosaicStart extends HTMLElement {
       const parts = this._appParts(this._overlay);
       const heat = parts && this._appHeat(this._overlay, parts);
       if (heat) this._stepHeatOn(heat, parts.title, () => this._renderApp(), step.dataset.heatstep === 'up' ? 1 : -1);
+      return;
+    }
+    const cam = e.target.closest('[data-more]');
+    if (cam) {
+      this._moreInfo(cam.dataset.more);
       return;
     }
     const row = e.target.closest('.row');

@@ -166,6 +166,11 @@ button { font: inherit; color: inherit; background: none; border: 0; padding: 0;
 .art .bigicon { --mdc-icon-size: min(42vh, 30vw); color: var(--fg); opacity: .07; }
 @media (max-width: 1150px) { .wideapp > .art { display: none; } .wideapp .ppage, .wideapp .ipage { padding-right: var(--pad); } }
 .rimg { width: 100%; max-width: 520px; display: block; margin-bottom: 4px; }
+/* A camera on a room's page: its shape fixed before the first still arrives,
+   each new one faded in over the last; tap for the live view. */
+.rcam { position: relative; display: block; width: 100%; max-width: 520px; aspect-ratio: 16 / 9; margin: 4px 0 6px; padding: 0; overflow: hidden; background: color-mix(in srgb, var(--fg) 8%, transparent); cursor: pointer; }
+.rcam img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; display: block; }
+.campic { transition: opacity 500ms ease; }
 .toggle { flex: 0 0 auto; width: 50px; height: 24px; border: 2px solid var(--fg); border-radius: 12px; position: relative; }
 /* The switch is small to look at and big to hit. */
 .toggle::before { content: ''; position: absolute; inset: -14px -10px; }
@@ -491,13 +496,20 @@ button { font: inherit; color: inherit; background: none; border: 0; padding: 0;
 .caltimes[hidden] { display: none; }
 .formbtns { margin-top: 10px; }
 
+/* Cameras and what is playing, laid on the floors of their rooms. */
+.plan .room .camtile > rect.camback { fill: rgba(0,0,0,.55); }
+.plan .room.pictured text { pointer-events: none; }
+.whochip.energy b { font-weight: 600; }
+
 /* --- phones: everything a thumb has to hit is at least about 44 px ---------- */
 .root:not(.desk) .hub { gap: 0; padding: 2px calc(var(--pad) - 8px) 0; }
 .root:not(.desk) .hub button { font-size: 22px; padding: 10px 8px 8px; }
 .root:not(.desk) .back { width: 44px; height: 44px; }
 .root:not(.desk) .apptitle { gap: 10px; padding-top: 8px; }
 .root:not(.desk) .app.intab .pivots button { padding: 8px 0; }
-.root:not(.desk) .planmodes { gap: 2px; margin: 0 0 2px -8px; }
+.root:not(.desk) .planmodes { gap: 2px; margin: 0 0 2px -8px; flex: 0 1 auto; min-width: 0; overflow-x: auto; scrollbar-width: none; }
+.root:not(.desk) .planmodes::-webkit-scrollbar { display: none; }
+.root:not(.desk) .planmodes button { flex: 0 0 auto; white-space: nowrap; }
 .root:not(.desk) .planmodes button { padding: 12px 8px 10px; }
 .root:not(.desk) .planmodes button.on { border-bottom: 0; box-shadow: inset 0 -2px 0 var(--accent); }
 .root:not(.desk) .housebar { flex-wrap: nowrap; align-items: center; gap: 4px; }

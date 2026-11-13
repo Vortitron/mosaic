@@ -55,6 +55,11 @@ export function makeFakeHass(onUpdate, { agent = 'anthropic' } = {}) {
   add('media_player.living_room', 'playing', { friendly_name: 'Living Room Speaker', media_title: 'Clair de Lune', media_artist: 'Debussy', entity_picture: '/tools/harness/art.svg' }, 'living_room');
   add('media_player.bedroom', 'off', { friendly_name: 'Bedroom TV' }, 'bedroom');
   add('camera.garden', 'idle', { friendly_name: 'Garden Camera', entity_picture: '/tools/harness/cam.svg?token=x' }, 'garden');
+  add('camera.front_door', 'idle', { friendly_name: 'Front Door Camera', entity_picture: '/tools/harness/cam.svg?token=y' }, 'hallway');
+  add('sensor.tv_plug_power', '4.2', { friendly_name: 'TV Plug Power', device_class: 'power', unit_of_measurement: 'W' }, 'living_room');
+  add('sensor.desk_plug_power', '86', { friendly_name: 'Desk Plug Power', device_class: 'power', unit_of_measurement: 'W' }, 'office');
+  add('sensor.heat_pump_power', '0.9', { friendly_name: 'Heat Pump Power', device_class: 'power', unit_of_measurement: 'kW' }, 'hallway');
+  add('sensor.grid_power', '1.4', { friendly_name: 'Grid Power', device_class: 'power', unit_of_measurement: 'kW' }, 'comms');
   add('scene.movie', 'scening', { friendly_name: 'Movie Night' }, 'living_room');
   add('vacuum.robot', 'docked', { friendly_name: 'Robot Vacuum' }, null);
   add('weather.home', 'partlycloudy', { friendly_name: 'Home', temperature: 11.2, temperature_unit: '°C', humidity: 81, wind_speed: 14, wind_speed_unit: 'km/h' }, null);
