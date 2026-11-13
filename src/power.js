@@ -348,6 +348,13 @@ export function energyCheck(hass, prefs, today = null, before = null) {
     const near = (v) => Math.abs(v - w) < Math.max(0.15, w * 0.005);
     let like = w > 1 ? tracked.find((t) => t.w !== null && near(t.w)) : null;
     const mine = today && energy ? today[energy] : null;
+    // A moment's watts can agree by chance (a server and a heat pump both at
+    // 159 W): where both have days counted, those must agree too, loosely
+    // (a cloud counter reports late and to the watt-hour).
+    if (like && energy) {
+      const known = [today, before].filter((d) => d && d[energy] > 0.2 && typeof d[like.key] === 'number');
+      if (known.some((d) => Math.abs(d[energy] - d[like.key]) > Math.max(0.03, d[like.key] * 0.05))) like = null;
+    }
     if (!like && mine > 0.2) {
       // The closest one or two, trusted only when they agree almost exactly
       // and clearly better than the next closest: with thirty devices there

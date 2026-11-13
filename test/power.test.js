@@ -336,6 +336,34 @@ test('a pair adding up is trusted on two days, not one', () => {
   assert.equal(r620(today, { ...yesterday, 'sensor.r620_power_usage_energy': 3.5 }), null, "yesterday's not adding up undoes it");
 });
 
+test("the same watts for a moment is not the same plug when their days differ", () => {
+  const states = {};
+  const entities = {};
+  const s = (id, state, attrs, dev = null) => {
+    states[id] = { state, attributes: attrs };
+    entities[id] = { device_id: dev };
+  };
+  const P = { device_class: 'power', unit_of_measurement: 'W', state_class: 'measurement' };
+  const E = { device_class: 'energy', unit_of_measurement: 'kWh', state_class: 'total_increasing' };
+  s('sensor.evvie_power', '159', P, 'evvie');
+  s('sensor.r620_power_usage', '159', P, 'r620');
+  s('sensor.r620_power_usage_energy', '86', E);
+  s('sensor.amp_power', '34.4', P, 'amp');
+  s('sensor.amp_cloud_power', '34.4', P, 'pool');
+  s('sensor.airfry_total_energy', '1.8', E, 'pool');
+  const prefs = { device_consumption: [
+    { stat_consumption: 'sensor.evvie_energy', name: 'Evvie', stat_rate: 'sensor.evvie_power' },
+    { stat_consumption: 'sensor.amp_energy', name: 'Bio Amp', stat_rate: 'sensor.amp_power' },
+  ] };
+  // GamlaBio, 13 Nov.
+  const today = { 'sensor.evvie_energy': 2.3581, 'sensor.r620_power_usage_energy': 2.6975, 'sensor.amp_energy': 0.5783, 'sensor.airfry_total_energy': 0.566 };
+  const yesterday = { 'sensor.evvie_energy': 1.9335, 'sensor.r620_power_usage_energy': 3.8152, 'sensor.amp_energy': 0.8261, 'sensor.airfry_total_energy': 0.827 };
+  const likeOf = (power, ...days) => energyCheck({ states, entities, devices: {} }, prefs, ...days).missing.find((m) => m.power === power).like;
+  assert.equal(likeOf('sensor.r620_power_usage'), 'Evvie', 'with nothing else to go on, the watts');
+  assert.equal(likeOf('sensor.r620_power_usage', today, yesterday), null);
+  assert.equal(likeOf('sensor.amp_cloud_power', today, yesterday), 'Bio Amp', 'the cloud counter, late and rounded, still agrees');
+});
+
 test("a dial's top is a round number above the reading", () => {
   assert.deepEqual([niceMax(1890), niceMax(2100), niceMax(240), niceMax(5250), niceMax(0)], [2000, 2500, 250, 6000, 1]);
 });
