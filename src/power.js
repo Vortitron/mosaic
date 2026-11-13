@@ -296,12 +296,18 @@ export function energyCheck(hass, prefs, today = null) {
     let like = w > 1 ? tracked.find((t) => t.w !== null && near(t.w)) : null;
     const mine = today && energy ? today[energy] : null;
     if (!like && mine > 0.2) {
+      // The closest one or two, trusted only when they agree almost exactly
+      // and clearly better than the next closest: with twenty devices there
+      // are two hundred pairs, and some come near by chance.
       const kwh = tracked.map((t) => ({ ...t, kwh: today[t.key] })).filter((t) => t.kwh > 0.05);
-      const same = (v) => Math.abs(v - mine) <= mine * 0.01;
-      like = kwh.find((t) => same(t.kwh)) || null;
-      for (let i = 0; i < kwh.length && !like; i++) for (let j = i + 1; j < kwh.length && !like; j++) {
-        if (same(kwh[i].kwh + kwh[j].kwh)) like = { name: `${kwh[i].name} and ${kwh[j].name} together` };
-      }
+      const fits = [];
+      kwh.forEach((a, i) => {
+        fits.push({ off: Math.abs(a.kwh - mine), name: a.name });
+        for (let j = i + 1; j < kwh.length; j++) fits.push({ off: Math.abs(a.kwh + kwh[j].kwh - mine), name: `${a.name} and ${kwh[j].name} together` });
+      });
+      fits.sort((x, y) => x.off - y.off);
+      const tight = Math.max(0.002, mine * 0.002);
+      if (fits[0] && fits[0].off <= tight && (!fits[1] || fits[1].off >= fits[0].off * 3 + tight)) like = { name: fits[0].name };
     }
     by.set(key, { key, name: (device && (device.name_by_user || device.name)) || nameOf(hass, id), power: id, energy, w, area: area ? area.area_id : null, like: like ? like.name : null });
   }
