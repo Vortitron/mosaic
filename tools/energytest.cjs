@@ -131,9 +131,25 @@ const URL = (process.env.URL || 'http://127.0.0.1:18766/tools/harness/') + '?bar
   console.log('saved:', JSON.stringify(saved));
   assert.deepEqual(saved, { stat_consumption: 'sensor.fridge_energy', name: 'Fridge', stat_rate: 'sensor.fridge_power', included_in_stat: 'sensor.tv_plug_energy' });
   await page.waitForTimeout(500);
+  // The office heater's counter (Energy Sensor Generator) moved to the
+  // dehumidifier's plug: the generator's own Edit dialog, history kept.
+  await ev(() => { const x = window.card.shadowRoot.querySelector('select[data-ecpick="sensor.office_heater_energy"]'); x.value = 'sensor.dehumidifier_power'; });
+  await ev(() => window.card.shadowRoot.querySelector('[data-ecswap="sensor.office_heater_energy"]').click());
+  await page.waitForTimeout(300);
+  const said3 = await confirm('swap');
+  console.log('generator asks:', said3.replace(/\s+/g, ' '));
+  assert.match(said3, /sensor\.office_heater_energy \(from Energy Sensor Generator\), counts from sensor\.dehumidifier_power.*history is kept/s);
+  await page.waitForTimeout(400);
+  assert.deepEqual((await ev(() => window.hass.flows)).slice(-2), [
+    { subentry: { handler: ['esg', 'power_sensor'], subentry_id: 'sub_heater', show_advanced_options: false } },
+    { input: { source_entity_id: 'sensor.dehumidifier_power', periods: ['daily'] } },
+  ]);
+  const heater = await ev(() => window.hass.ws.filter((m) => m.type === 'energy/save_prefs').at(-1).device_consumption.find((d) => d.name === 'Office heater'));
+  assert.deepEqual(heater, { stat_consumption: 'sensor.office_heater_energy', name: 'Office heater', stat_rate: 'sensor.dehumidifier_power' });
+  await page.waitForTimeout(500);
   const left = (await rowsOf()).map((r) => r[0]);
   console.log('left:', JSON.stringify(left));
-  assert.deepEqual(left, ['Dehumidifier Power', 'Desk Plug (cloud) Power', 'Office heater'], 'counted now, so off the list');
+  assert.deepEqual(left, ['Desk Plug (cloud) Power'], 'counted now, so off the list; a counter just moved is not blamed for today');
   await ev(() => window.card._close());
   await page.waitForTimeout(300);
 

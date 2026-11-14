@@ -149,7 +149,9 @@ export function makeFakeHass(onUpdate, { agent = 'anthropic' } = {}) {
   // The office heater is unplugged: its plug unavailable, its counter there.
   add('sensor.office_heater_power', 'unavailable', { friendly_name: 'Office heater Power', device_class: 'power', unit_of_measurement: 'W', state_class: 'measurement' }, 'office');
   states['sensor.office_heater_power'].last_changed = new Date(Date.now() - 9 * 86400e3).toISOString();
-  add('sensor.office_heater_energy', '739.1', { friendly_name: 'Office heater energy', device_class: 'energy', unit_of_measurement: 'kWh', state_class: 'total_increasing' }, 'office');
+  add('sensor.office_heater_energy', '739.1', { friendly_name: 'Office heater energy', device_class: 'energy', unit_of_measurement: 'kWh', state_class: 'total_increasing' }, 'office', { platform: 'energy_sensor_generator', config_entry_id: 'esg', config_subentry_id: 'sub_heater' });
+  // The stopped counters stopped days ago.
+  for (const id of ['sensor.old_lamp_energy', 'sensor.aquarium_energy', 'sensor.office_heater_energy']) states[id].last_changed = new Date(Date.now() - 3 * 86400e3).toISOString();
   add('sensor.desk_plug_cloud_power', '86', { friendly_name: 'Desk Plug (cloud) Power', device_class: 'power', unit_of_measurement: 'W', state_class: 'measurement' }, 'office');
   const energyPrefs = {
     energy_sources: [{ type: 'grid', stat_energy_from: 'sensor.grid_import_energy', stat_energy_to: 'sensor.grid_export_energy', entity_energy_price: 'sensor.electricity_price', number_energy_price: null, stat_cost: null, cost_adjustment_day: 0 }],
@@ -249,6 +251,17 @@ export function makeFakeHass(onUpdate, { agent = 'anthropic' } = {}) {
         rebuild();
         return { type: 'create_entry', result: { entry_id: `made${flows.length}` } };
       }
+      // Energy Sensor Generator: a source moved to another power sensor.
+      if (method === 'POST' && path === 'config/config_entries/subentries/flow') {
+        flows.push({ subentry: data });
+        return { type: 'form', flow_id: 'sub1', step_id: 'reconfigure', data_schema: [{ name: 'source_entity_id', default: 'sensor.office_heater_power' }, { name: 'name', default: '' }, { name: 'periods', default: ['daily'] }, { name: 'energy_counter', description: { suggested_value: null } }] };
+      }
+      if (method === 'POST' && path === 'config/config_entries/subentries/flow/sub1') {
+        flows.push({ input: data });
+        states['sensor.office_heater_energy'] = { ...states['sensor.office_heater_energy'], last_changed: new Date().toISOString() };
+        rebuild();
+        return { type: 'abort', reason: 'reconfigure_successful' };
+      }
       if (method === 'POST' && path === 'config/config_entries/options/flow') {
         flows.push({ options: data });
         const was = { int_aquarium: { source: 'sensor.aquarium_power', method: 'left', round: 2 } }[data.handler] || {};
@@ -279,6 +292,7 @@ export function makeFakeHass(onUpdate, { agent = 'anthropic' } = {}) {
         return null;
       }
       if (msg.type === 'manifest/list') return msg.integrations.map((domain) => ({ domain, iot_class: { tuya: 'cloud_poll', tuya_local: 'local_push', shelly: 'local_push' }[domain] || 'local_polling' }));
+      if (msg.type === 'manifest/get') return { domain: msg.integration, version: { energy_sensor_generator: '0.2.1' }[msg.integration] || null };
       if (msg.type === 'config/entity_registry/list') return Object.values(entities);
       if (msg.type === 'config/entity_registry/get') return entities[msg.entity_id] || null;
       if (msg.type === 'energy/get_prefs') return JSON.parse(JSON.stringify(energyPrefs));

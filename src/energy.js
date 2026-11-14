@@ -454,7 +454,7 @@ export const energyMethods = {
     const problems = c.problems.map((p) => {
       let act = '';
       const s = p.suggest && byKey.get(p.suggest);
-      if (s) act = `<p class="esub"><b>${esc(s.name)}</b> is in the same room and isn't counted (${esc(wattsText(s.w))} now). If it is the new plug, or the same plug through another integration, count ${esc(p.name)} by it.${p.integral ? ` Its counter, an Integral helper, then counts from ${esc(s.name)}'s power and carries on, its history kept.` : s.energy && !s.cloud ? '' : ` Mosaic makes it a counter here at home, from ${esc(s.name)}'s power reading${s.cloud ? ', rather than counting by its cloud total' : ''}.`}</p>`;
+      if (s) act = `<p class="esub"><b>${esc(s.name)}</b> is in the same room and isn't counted (${esc(wattsText(s.w))} now). If it is the new plug, or the same plug through another integration, count ${esc(p.name)} by it.${p.integral || p.generator ? ` Its counter${p.integral ? ', an Integral helper,' : ''} then counts from ${esc(s.name)}'s power and carries on, its history kept.` : s.energy && !s.cloud ? '' : ` Mosaic makes it a counter here at home, from ${esc(s.name)}'s power reading${s.cloud ? ', rather than counting by its cloud total' : ''}.`}</p>`;
       if (can && p.choices.length) act += pickOf(p);
       else act += '<p class="esub">Fix it in Home Assistant\'s Energy dashboard settings.</p>';
       return `<div class="placerow"><div class="placehead"><span class="ename">${esc(p.name)}</span></div><small class="eid">${esc(p.id)}</small><p class="esub">${esc(p.why[0].toUpperCase() + p.why.slice(1))}.</p>${act}</div>`;
@@ -511,11 +511,15 @@ export const energyMethods = {
     if (!m || (!m.energy && !m.power)) return this._toast('Choose what to count it by first');
     const done = `${p.name} counts by ${m.name} now`;
     const fail = (err) => { this._toast(`Not swapped: ${(err && err.message) || err}`); return null; };
-    // Its counter is an Integral helper: point that at the new plug's power,
-    // and it carries on where it stopped.
-    if (p.integral && m.power) {
-      this._ask({ title: `Count ${p.name} by ${m.name}?`, text: `${p.name}'s energy counter, ${p.key} (an Integral helper), counts from ${m.power} from now on, carrying on where it stopped, so its history is kept and nothing else in the Energy dashboard changes.`, yes: 'swap', then: async () => {
-        if (await this._repointCounter(p.key, m.power).then(() => true, fail)) this._saveDevices((fresh) => repointDevice(fresh, key, m.power), done, 'Not swapped');
+    // Its counter is an Integral helper, or an Energy Sensor Generator one
+    // new enough to move: point that at the new plug's power, and it carries
+    // on where it stopped.
+    const movable = m.power && (p.integral || (p.generator && await this._generatorMoves()));
+    if (movable) {
+      const kind = p.integral ? 'an Integral helper' : 'from Energy Sensor Generator';
+      this._ask({ title: `Count ${p.name} by ${m.name}?`, text: `${p.name}'s energy counter, ${p.key} (${kind}), counts from ${m.power} from now on, carrying on where it stopped, so its history is kept and nothing else in the Energy dashboard changes.`, yes: 'swap', then: async () => {
+        const moved = p.integral ? this._repointCounter(p.key, m.power) : this._repointGenerator(p.key, m.power);
+        if (await moved.then(() => true, fail)) this._saveDevices((fresh) => repointDevice(fresh, key, m.power), done, 'Not swapped');
       } });
       return undefined;
     }
@@ -523,7 +527,7 @@ export const energyMethods = {
     const inner = ((this._energyPrefs.device_consumption) || []).filter((d) => d.included_in_stat === key).map((d) => d.name || d.stat_consumption);
     const by = make ? `a new energy counter made from ${m.power} here at home (an Integral helper${m.cloud ? `, rather than the cloud total ${m.energy}` : ''})` : m.energy;
     const history = make
-      ? `The new counter starts now, so ${p.name}'s earlier days stop showing in the Energy dashboard; they stay recorded under the old counter.`
+      ? `The new counter starts now, so ${p.name}'s earlier days stop showing in the Energy dashboard; they stay recorded under the old counter.${p.generator ? ' (Energy Sensor Generator 0.2.1 or later would move its counter instead, keeping them: update it, and swap then.)' : ''}`
       : `Its earlier days then show ${m.energy}'s history, which is that plug's, whatever it was plugged into; the old counter's stays recorded.`;
     this._ask({ title: `Count ${p.name} by ${m.name}?`, text: `${p.name} keeps its name and place in the Energy dashboard, counted by ${by}${m.power ? `, its power from ${m.power}` : ''}.${inner.length ? ` ${inner.join(', ')}, set inside it, ${inner.length > 1 ? 'move' : 'moves'} with it.` : ''} ${history}`, yes: 'swap', then: async () => {
       // In the room of what it replaces, so that stays where it was.
@@ -557,6 +561,43 @@ export const energyMethods = {
       await new Promise((r) => setTimeout(r, 500));
     }
     throw new Error('the counter was made but has no sensor yet; add it from the check in a minute');
+  },
+
+  // Whether the Energy Sensor Generator installed can move a source to
+  // another power sensor (0.2.1 and later).
+  async _generatorMoves() {
+    try {
+      const m = await this._hass.callWS({ type: 'manifest/get', integration: 'energy_sensor_generator' });
+      const [a, b, c] = String(m.version || '0').split('.').map((x) => parseInt(x, 10) || 0);
+      return a > 0 || b > 2 || (b === 2 && c >= 1);
+    } catch (_) {
+      return false;
+    }
+  },
+
+  // An Energy Sensor Generator counter moved to another power sensor, through
+  // its source's Edit dialog: everything else about it as it was.
+  async _repointGenerator(counter, power) {
+    const hass = this._hass;
+    const reg = await hass.callWS({ type: 'config/entity_registry/get', entity_id: counter });
+    if (!reg || !reg.config_entry_id || !reg.config_subentry_id) throw new Error(`${counter} has no source to move`);
+    const base = 'config/config_entries/subentries/flow';
+    let step = await hass.callApi('POST', base, { handler: [reg.config_entry_id, 'power_sensor'], subentry_id: reg.config_subentry_id, show_advanced_options: false });
+    const fields = step.data_schema || [];
+    if (!fields.some((f) => f.name === 'source_entity_id')) {
+      if (step.flow_id) hass.callApi('DELETE', `${base}/${step.flow_id}`).catch(() => {});
+      throw new Error('this Energy Sensor Generator can\'t move a counter yet: update it to 0.2.1');
+    }
+    const keep = {};
+    for (const f of fields) {
+      const v = f.description && f.description.suggested_value !== undefined ? f.description.suggested_value : f.default;
+      if (v !== undefined && v !== null && v !== '') keep[f.name] = v;
+    }
+    step = await hass.callApi('POST', `${base}/${step.flow_id}`, { ...keep, source_entity_id: power });
+    if (step.type !== 'abort' || step.reason !== 'reconfigure_successful') {
+      if (step.flow_id && step.type === 'form') hass.callApi('DELETE', `${base}/${step.flow_id}`).catch(() => {});
+      throw new Error(`its counter wasn't moved${step.errors ? ` (${Object.values(step.errors).join(', ')})` : step.reason ? ` (${step.reason})` : ''}`);
+    }
   },
 
   // An Integral helper set to count from another power sensor, everything

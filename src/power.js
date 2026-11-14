@@ -286,11 +286,15 @@ const areasOf = (hass, ids) => new Set(ids.map((id) => id && areaOf(hass, id)).f
 // iot_class); a plug whose power is read locally but whose total only comes
 // through one of them is marked `cloud`, so it can be counted at home instead.
 // integral: the entry's counter is an Integral helper, which can be pointed
-// at a new plug's power and carry on, its history kept.
+// at a new plug's power and carry on, its history kept. generator: it is an
+// Energy Sensor Generator one, which can too (from its 0.2.1).
 export function energyCheck(hass, prefs, today = null, before = null, { cloud = null } = {}) {
   const platformOf = (id) => hass.entities && hass.entities[id] && hass.entities[id].platform;
   const isCloud = (id) => !!(cloud && id && cloud.has(platformOf(id)));
   const offline = [];
+  // A counter whose state changed in the last two hours is counting, whatever
+  // today's statistics (compiled hourly) say: one just moved to a new plug.
+  const movedLately = (st) => !!(st && st.last_changed && Date.now() - new Date(st.last_changed).getTime() < 2 * 3600e3);
   const problems = [];
   const used = new Set();
   const src = energySources(prefs);
@@ -308,7 +312,7 @@ export function energyCheck(hass, prefs, today = null, before = null, { cloud = 
     // Its plug is offline, its counter still there: unplugged, most likely.
     if (d.stat_rate && hass.states[d.stat_rate] && hass.states[d.stat_rate].state === 'unavailable' && (counter || !/^sensor\./.test(d.stat_consumption))) {
       broken.add(d.stat_consumption);
-      offline.push({ name, key: d.stat_consumption, id: d.stat_rate, since: hass.states[d.stat_rate].last_changed || null, choices: [], integral: platformOf(d.stat_consumption) === 'integration' });
+      offline.push({ name, key: d.stat_consumption, id: d.stat_rate, since: hass.states[d.stat_rate].last_changed || null, choices: [], integral: platformOf(d.stat_consumption) === 'integration', generator: platformOf(d.stat_consumption) === 'energy_sensor_generator' });
       continue;
     }
     if (d.stat_rate) {
@@ -320,13 +324,13 @@ export function energyCheck(hass, prefs, today = null, before = null, { cloud = 
     if (/^sensor\./.test(d.stat_consumption) && !hass.states[d.stat_consumption]) {
       if (!why.length) id = d.stat_consumption;
       why.push('its energy sensor is gone, so it counts nothing new');
-    } else if (today && today[d.stat_consumption] === 0 && (watts(hass, d.stat_rate) || 0) >= 20 && new Date().getHours() >= 3) {
+    } else if (today && today[d.stat_consumption] === 0 && (watts(hass, d.stat_rate) || 0) >= 20 && new Date().getHours() >= 3 && !movedLately(counter)) {
       id = d.stat_consumption;
       why.push(`its energy counter has counted nothing today, though its power sensor reads ${wattsText(watts(hass, d.stat_rate))}`);
     } else if (why.length && today && today[d.stat_consumption] === 0) why.push('its energy counter has counted nothing today');
     if (why.length) {
       broken.add(d.stat_consumption);
-      problems.push({ name, key: d.stat_consumption, id, why: why.join('; '), choices: [], suggest: null, integral: platformOf(d.stat_consumption) === 'integration' });
+      problems.push({ name, key: d.stat_consumption, id, why: why.join('; '), choices: [], suggest: null, integral: platformOf(d.stat_consumption) === 'integration', generator: platformOf(d.stat_consumption) === 'energy_sensor_generator' });
     }
   }
   // Something inside another that counts more than it today: the outer one
@@ -337,7 +341,7 @@ export function energyCheck(hass, prefs, today = null, before = null, { cloud = 
       const mine = today[d.stat_consumption];
       const outer = d.included_in_stat && today[d.included_in_stat];
       if (!d.included_in_stat || broken.has(d.included_in_stat) || broken.has(d.stat_consumption) || !(mine > 0.1) || typeof outer !== 'number') continue;
-      if (mine > outer * 1.1 + 0.05) problems.push({ name: d.name || d.stat_consumption, key: d.stat_consumption, id: d.stat_consumption, why: `it counts more today (${kwhText(mine)}) than ${named.get(d.included_in_stat) || d.included_in_stat} (${kwhText(outer)}), which it is set inside`, choices: [], suggest: null, integral: false });
+      if (mine > outer * 1.1 + 0.05) problems.push({ name: d.name || d.stat_consumption, key: d.stat_consumption, id: d.stat_consumption, why: `it counts more today (${kwhText(mine)}) than ${named.get(d.included_in_stat) || d.included_in_stat} (${kwhText(outer)}), which it is set inside`, choices: [], suggest: null, integral: false, generator: false });
     }
   }
   // Devices any of whose entities the dashboard already uses, and meters.

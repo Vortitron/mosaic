@@ -418,3 +418,23 @@ test('an unplugged device is offline, not broken; an Integral counter is pointed
   assert.deepEqual(energyCheck({ states, entities, devices: {} }, prefs).problems.map((p) => p.name), ['Office heaters', 'Tank']);
   assert.deepEqual(repointDevice(prefs, 'sensor.tank_energy', 'sensor.new_power')[1], { stat_consumption: 'sensor.tank_energy', name: 'Tank', stat_rate: 'sensor.new_power' });
 });
+
+test("a generator's counter can be moved; one just moved isn't blamed for today", () => {
+  const states = {};
+  const entities = {};
+  const P = { device_class: 'power', unit_of_measurement: 'W', state_class: 'measurement' };
+  const E = { device_class: 'energy', unit_of_measurement: 'kWh', state_class: 'total_increasing' };
+  const long = new Date(Date.now() - 20 * 86400e3).toISOString();
+  states['sensor.bio_power_power'] = { state: '52', attributes: P, last_changed: new Date().toISOString() };
+  states['sensor.smart_plug_energy'] = { state: '52.7', attributes: E, last_changed: long };
+  entities['sensor.smart_plug_energy'] = { device_id: null, area_id: null, platform: 'energy_sensor_generator' };
+  const gone = { device_consumption: [{ stat_consumption: 'sensor.smart_plug_energy', name: 'Bio Stuff', stat_rate: 'sensor.smart_plug_power' }] };
+  assert.deepEqual(energyCheck({ states, entities, devices: {} }, gone).problems.map((p) => [p.generator, p.integral]), [[true, false]]);
+  // Moved to the new plug: until the hour's statistics come, today says 0.
+  const moved = { device_consumption: [{ ...gone.device_consumption[0], stat_rate: 'sensor.bio_power_power' }] };
+  const today = { 'sensor.smart_plug_energy': 0 };
+  const hour = new Date().getHours() >= 3;
+  assert.equal(energyCheck({ states, entities, devices: {} }, moved, today).problems.length, hour ? 1 : 0, 'still frozen: blamed');
+  states['sensor.smart_plug_energy'] = { ...states['sensor.smart_plug_energy'], state: '52.71', last_changed: new Date().toISOString() };
+  assert.deepEqual(energyCheck({ states, entities, devices: {} }, moved, today).problems, [], 'counting again');
+});
