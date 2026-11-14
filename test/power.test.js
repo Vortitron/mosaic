@@ -197,7 +197,7 @@ test("a camera's time is when its picture last changed", () => {
   assert.equal(stampText(moved, at + 86400e3), '13 nov 14:03', 'yesterday’s says its day');
 });
 
-import { energyCheck, swapDevice, withDevice } from '../src/power.js';
+import { counterInput, energyCheck, repointDevice, swapDevice, withDevice } from '../src/power.js';
 import { niceMax } from '../src/energy.js';
 
 test('the energy check: what is broken, and what nothing counts', () => {
@@ -366,4 +366,55 @@ test("the same watts for a moment is not the same plug when their days differ", 
 
 test("a dial's top is a round number above the reading", () => {
   assert.deepEqual([niceMax(1890), niceMax(2100), niceMax(240), niceMax(5250), niceMax(0)], [2000, 2500, 250, 6000, 1]);
+});
+
+test('local before cloud: the cloud total marked, the plug still suggested when that total says nothing', () => {
+  const states = {};
+  const entities = {};
+  const areas = { wardrobe: { area_id: 'wardrobe', name: 'Sofie Wardrobe' } };
+  const devices = { old: { id: 'old', name: 'Smart Plug', area_id: 'wardrobe' }, bio: { id: 'bio', name: 'bio', area_id: null }, biocloud: { id: 'biocloud', name: 'bio', area_id: 'wardrobe' } };
+  const s = (id, state, attrs, dev, platform) => {
+    states[id] = { state, attributes: attrs };
+    entities[id] = { device_id: dev, area_id: null, platform };
+  };
+  s('sensor.smart_plug_energy', '52.7', { device_class: 'energy', unit_of_measurement: 'kWh', state_class: 'total_increasing', friendly_name: 'Smart Plug Energy' }, 'old', 'energy_sensor_generator');
+  s('sensor.bio_power_power', '51.9', { device_class: 'power', unit_of_measurement: 'W', state_class: 'measurement', friendly_name: 'Bio power Power' }, 'bio', 'tuya_local');
+  s('sensor.bio_leds_total_energy', '0', { device_class: 'energy', unit_of_measurement: 'kWh', state_class: 'total_increasing', friendly_name: 'Bio power (cloud) Total energy' }, 'biocloud', 'tuya');
+  const prefs = { device_consumption: [{ stat_consumption: 'sensor.smart_plug_energy', name: 'Bio Stuff', stat_rate: 'sensor.smart_plug_power' }] };
+  // 14 Nov: the cloud total had counted nothing yet today; the plug drew 52 W.
+  const today = { 'sensor.smart_plug_energy': 0, 'sensor.bio_leds_total_energy': 0 };
+  const c = energyCheck({ states, entities, devices, areas }, prefs, today, null, { cloud: new Set(['tuya']) });
+  assert.deepEqual(c.missing.map((m) => [m.name, m.cloud, m.replaces]), [['bio', true, 'Bio Stuff']]);
+  assert.deepEqual(c.problems.map((p) => [p.suggest, p.integral]), [['bio', false]]);
+  // Not knowing which integrations are cloud ones: nothing marked.
+  assert.equal(energyCheck({ states, entities, devices, areas }, prefs, today).missing[0].cloud, false);
+  // A plug with power only can take a broken entry's place too.
+  delete states['sensor.bio_leds_total_energy'];
+  const bare = energyCheck({ states, entities, devices, areas }, prefs, today, null, { cloud: new Set(['tuya']) });
+  assert.deepEqual([bare.missing[0].energy, bare.problems[0].choices], [null, ['bio']]);
+  assert.deepEqual(counterInput('bio energy', 'sensor.bio_power_power'), { name: 'bio energy', source: 'sensor.bio_power_power', method: 'left', round: 3, unit_prefix: 'k', unit_time: 'h', max_sub_interval: { hours: 0, minutes: 5, seconds: 0 } });
+});
+
+test('an unplugged device is offline, not broken; an Integral counter is pointed at the new plug', () => {
+  const states = {};
+  const entities = {};
+  const s = (id, state, attrs, platform = 'demo') => {
+    states[id] = { state, attributes: attrs, last_changed: '2026-11-05T10:00:00Z' };
+    entities[id] = { device_id: null, area_id: 'office', platform };
+  };
+  const E = { device_class: 'energy', unit_of_measurement: 'kWh', state_class: 'total_increasing' };
+  s('sensor.heaters_power', 'unavailable', { device_class: 'power', unit_of_measurement: 'W', state_class: 'measurement' });
+  s('sensor.heaters_energy', '739.1', E);
+  s('sensor.tank_energy', '58.4', E, 'integration');
+  const prefs = { device_consumption: [
+    { stat_consumption: 'sensor.heaters_energy', name: 'Office heaters', stat_rate: 'sensor.heaters_power' },
+    { stat_consumption: 'sensor.tank_energy', name: 'Tank', stat_rate: 'sensor.tank_power' },
+  ] };
+  const c = energyCheck({ states, entities, devices: {} }, prefs, { 'sensor.heaters_energy': 0, 'sensor.tank_energy': 0 });
+  assert.deepEqual(c.offline.map((o) => [o.name, o.id, o.since]), [['Office heaters', 'sensor.heaters_power', '2026-11-05T10:00:00Z']]);
+  assert.deepEqual(c.problems.map((p) => [p.name, p.integral]), [['Tank', true]]);
+  // Its counter gone too: broken after all.
+  delete states['sensor.heaters_energy'];
+  assert.deepEqual(energyCheck({ states, entities, devices: {} }, prefs).problems.map((p) => p.name), ['Office heaters', 'Tank']);
+  assert.deepEqual(repointDevice(prefs, 'sensor.tank_energy', 'sensor.new_power')[1], { stat_consumption: 'sensor.tank_energy', name: 'Tank', stat_rate: 'sensor.new_power' });
 });

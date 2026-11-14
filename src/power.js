@@ -265,7 +265,7 @@ function twinEnergy(hass, powerId, skip) {
 
 const areasOf = (hass, ids) => new Set(ids.map((id) => id && areaOf(hass, id)).filter(Boolean).map((a) => a.area_id));
 
-// { problems: [{ name, key, id, why, choices, suggest }], missing: [{ key, name, power, energy, w, area, like, replaces }] }
+// { problems: [{ name, key, id, why, choices, suggest, integral }], missing: [{ key, name, power, energy, w, area, like, pair, cloud, replaces }], offline: [{ name, key, id, since, choices }] }
 // problems: Energy dashboard entries whose sensors have gone or stopped, or
 // that count more than what they are inside; with, for the broken ones, the
 // uncounted plugs that could take their place (a plug replaced, or its
@@ -280,7 +280,17 @@ const areasOf = (hass, ids) => new Set(ids.map((id) => id && areaOf(hass, id)).f
 // energy counters), when known; a pair adding up to a candidate is only
 // trusted on that, not on a passing moment's watts. before: the same for
 // yesterday; when known, a match has to hold on both days.
-export function energyCheck(hass, prefs, today = null, before = null) {
+// offline: entries whose plug is unavailable but whose counter is still
+// there (unplugged, or out of reach): not broken, it counts again when back.
+// cloud: the integrations that reach their devices through the cloud (by
+// iot_class); a plug whose power is read locally but whose total only comes
+// through one of them is marked `cloud`, so it can be counted at home instead.
+// integral: the entry's counter is an Integral helper, which can be pointed
+// at a new plug's power and carry on, its history kept.
+export function energyCheck(hass, prefs, today = null, before = null, { cloud = null } = {}) {
+  const platformOf = (id) => hass.entities && hass.entities[id] && hass.entities[id].platform;
+  const isCloud = (id) => !!(cloud && id && cloud.has(platformOf(id)));
+  const offline = [];
   const problems = [];
   const used = new Set();
   const src = energySources(prefs);
@@ -294,6 +304,13 @@ export function energyCheck(hass, prefs, today = null, before = null) {
     for (const id of [d.stat_consumption, d.stat_rate]) if (id) used.add(id);
     const why = [];
     let id = d.stat_rate || d.stat_consumption;
+    const counter = hass.states[d.stat_consumption];
+    // Its plug is offline, its counter still there: unplugged, most likely.
+    if (d.stat_rate && hass.states[d.stat_rate] && hass.states[d.stat_rate].state === 'unavailable' && (counter || !/^sensor\./.test(d.stat_consumption))) {
+      broken.add(d.stat_consumption);
+      offline.push({ name, key: d.stat_consumption, id: d.stat_rate, since: hass.states[d.stat_rate].last_changed || null, choices: [], integral: platformOf(d.stat_consumption) === 'integration' });
+      continue;
+    }
     if (d.stat_rate) {
       const st = hass.states[d.stat_rate];
       if (!st) why.push('its power sensor is gone (renamed or removed), so it reads nothing now');
@@ -309,7 +326,7 @@ export function energyCheck(hass, prefs, today = null, before = null) {
     } else if (why.length && today && today[d.stat_consumption] === 0) why.push('its energy counter has counted nothing today');
     if (why.length) {
       broken.add(d.stat_consumption);
-      problems.push({ name, key: d.stat_consumption, id, why: why.join('; '), choices: [], suggest: null });
+      problems.push({ name, key: d.stat_consumption, id, why: why.join('; '), choices: [], suggest: null, integral: platformOf(d.stat_consumption) === 'integration' });
     }
   }
   // Something inside another that counts more than it today: the outer one
@@ -320,7 +337,7 @@ export function energyCheck(hass, prefs, today = null, before = null) {
       const mine = today[d.stat_consumption];
       const outer = d.included_in_stat && today[d.included_in_stat];
       if (!d.included_in_stat || broken.has(d.included_in_stat) || broken.has(d.stat_consumption) || !(mine > 0.1) || typeof outer !== 'number') continue;
-      if (mine > outer * 1.1 + 0.05) problems.push({ name: d.name || d.stat_consumption, key: d.stat_consumption, id: d.stat_consumption, why: `it counts more today (${kwhText(mine)}) than ${named.get(d.included_in_stat) || d.included_in_stat} (${kwhText(outer)}), which it is set inside`, choices: [], suggest: null });
+      if (mine > outer * 1.1 + 0.05) problems.push({ name: d.name || d.stat_consumption, key: d.stat_consumption, id: d.stat_consumption, why: `it counts more today (${kwhText(mine)}) than ${named.get(d.included_in_stat) || d.included_in_stat} (${kwhText(outer)}), which it is set inside`, choices: [], suggest: null, integral: false });
     }
   }
   // Devices any of whose entities the dashboard already uses, and meters.
@@ -376,24 +393,30 @@ export function energyCheck(hass, prefs, today = null, before = null) {
       fits.sort((x, y) => x.off - y.off);
       if (fits[0] && fits[0].off <= 1 && (!fits[1] || fits[1].off >= fits[0].off * 3 + 1)) like = fits[0];
     }
-    by.set(key, { key, name: (device && (device.name_by_user || device.name)) || nameOf(hass, id), power: id, energy, w, area: area ? area.area_id : null, like: like ? like.name : null, pair: !!(like && like.pair), replaces: null });
+    by.set(key, { key, name: (device && (device.name_by_user || device.name)) || nameOf(hass, id), power: id, energy, w, area: area ? area.area_id : null, like: like ? like.name : null, pair: !!(like && like.pair), cloud: !!(energy && isCloud(energy) && !isCloud(id)), replaces: null });
   }
   const missing = [...by.values()].sort((a, b) => (a.like ? 1 : 0) - (b.like ? 1 : 0) || b.w - a.w);
-  // What could take a broken entry's place, and the likeliest.
-  const spare = missing.filter((m) => m.energy && !m.like);
+  // What could take a broken entry's place (any uncounted plug: one with
+  // only power, or only a cloud total, gets a counter made at home), and the
+  // likeliest.
+  const spare = missing.filter((m) => !m.like);
+  for (const o of offline) o.choices = spare.map((m) => m.key);
   for (const p of problems) {
     if (!broken.has(p.key)) continue;
     const d = list.find((x) => x.stat_consumption === p.key);
     p.choices = spare.map((m) => m.key);
     const rooms = areasOf(hass, [d.stat_consumption, d.stat_rate]);
-    // In the same room, and counting: today's energy moving, where known.
-    const here = rooms.size ? spare.filter((m) => [...areasOf(hass, [m.power, m.energy])].some((a) => rooms.has(a)) && (!today || !(m.energy in today) || today[m.energy] > 0)) : [];
+    // In the same room, and in use: its own counter moving today, where
+    // known; else (only power, or a cloud total that reports late) drawing
+    // power now.
+    const moving = (m) => (m.energy && !m.cloud && today && m.energy in today ? today[m.energy] > 0 : (m.w || 0) > 1);
+    const here = rooms.size ? spare.filter((m) => [...areasOf(hass, [m.power, m.energy])].some((a) => rooms.has(a)) && moving(m)) : [];
     if (here.length === 1 && !here[0].replaces) {
       p.suggest = here[0].key;
       here[0].replaces = p.name;
     }
   }
-  return { problems, missing };
+  return { problems, missing, offline };
 }
 
 // The Energy dashboard's devices with one more: what energy/save_prefs takes.
@@ -403,6 +426,19 @@ export function withDevice(prefs, { energy, power, name, inside = null }) {
   if (list.some((d) => d.stat_consumption === energy)) return list;
   list.push({ stat_consumption: energy, name, ...(power ? { stat_rate: power } : {}), ...(inside ? { included_in_stat: inside } : {}) });
   return list;
+}
+
+// The Energy dashboard's devices with one entry's power read from another
+// sensor: its counter (an Integral helper) now counts from that one too.
+export function repointDevice(prefs, key, power) {
+  return ((prefs && prefs.device_consumption) || []).map((d) => (d.stat_consumption === key ? { ...d, stat_rate: power } : d));
+}
+
+// What an Integral helper counting a plug's power is set up with: kWh from
+// watts, a rectangle per reading (a plug's power changes in steps), and a
+// sum at least every five minutes so a steady load is counted as it goes.
+export function counterInput(name, power) {
+  return { name, source: power, method: 'left', round: 3, unit_prefix: 'k', unit_time: 'h', max_sub_interval: { hours: 0, minutes: 5, seconds: 0 } };
 }
 
 // The Energy dashboard's devices with one counted by new sensors (its plug

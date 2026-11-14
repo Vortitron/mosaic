@@ -135,12 +135,21 @@ export function makeFakeHass(onUpdate, { agent = 'anthropic' } = {}) {
   // through a local integration (no room) and its total through the cloud
   // (in the living room, where the old one was). A reading lamp is set
   // inside the old one.
-  add('sensor.lamp_plug_power', '41', { friendly_name: 'Lamp plug Power', device_class: 'power', unit_of_measurement: 'W', state_class: 'measurement' }, null);
+  add('sensor.lamp_plug_power', '41', { friendly_name: 'Lamp plug Power', device_class: 'power', unit_of_measurement: 'W', state_class: 'measurement' }, null, { platform: 'tuya_local' });
   device('lamp_local', 'Lamp plug', null, ['sensor.lamp_plug_power']);
-  add('sensor.lamp_plug_total_energy', '3.2', { friendly_name: 'Lamp plug (cloud) Total energy', device_class: 'energy', unit_of_measurement: 'kWh', state_class: 'total_increasing' }, null);
+  add('sensor.lamp_plug_total_energy', '3.2', { friendly_name: 'Lamp plug (cloud) Total energy', device_class: 'energy', unit_of_measurement: 'kWh', state_class: 'total_increasing' }, null, { platform: 'tuya' });
   device('lamp_cloud', 'Lamp plug', 'living_room', ['sensor.lamp_plug_total_energy']);
   add('sensor.reading_lamp_energy', '5.1', { friendly_name: 'Reading lamp energy', device_class: 'energy', unit_of_measurement: 'kWh', state_class: 'total_increasing' }, null);
   entities['sensor.old_lamp_energy'].area_id = 'living_room';
+  // The aquarium is counted by an Integral helper whose power sensor went
+  // with its old plug; its new plug, in the kitchen, reports only power.
+  add('sensor.aquarium_energy', '58.4', { friendly_name: 'Aquarium energy', device_class: 'energy', unit_of_measurement: 'kWh', state_class: 'total' }, 'kitchen', { platform: 'integration', config_entry_id: 'int_aquarium' });
+  add('sensor.aquarium_plug_power', '18', { friendly_name: 'Aquarium plug Power', device_class: 'power', unit_of_measurement: 'W', state_class: 'measurement' }, null, { platform: 'shelly' });
+  device('aquarium_plug', 'Aquarium plug', 'kitchen', ['sensor.aquarium_plug_power']);
+  // The office heater is unplugged: its plug unavailable, its counter there.
+  add('sensor.office_heater_power', 'unavailable', { friendly_name: 'Office heater Power', device_class: 'power', unit_of_measurement: 'W', state_class: 'measurement' }, 'office');
+  states['sensor.office_heater_power'].last_changed = new Date(Date.now() - 9 * 86400e3).toISOString();
+  add('sensor.office_heater_energy', '739.1', { friendly_name: 'Office heater energy', device_class: 'energy', unit_of_measurement: 'kWh', state_class: 'total_increasing' }, 'office');
   add('sensor.desk_plug_cloud_power', '86', { friendly_name: 'Desk Plug (cloud) Power', device_class: 'power', unit_of_measurement: 'W', state_class: 'measurement' }, 'office');
   const energyPrefs = {
     energy_sources: [{ type: 'grid', stat_energy_from: 'sensor.grid_import_energy', stat_energy_to: 'sensor.grid_export_energy', entity_energy_price: 'sensor.electricity_price', number_energy_price: null, stat_cost: null, cost_adjustment_day: 0 }],
@@ -154,10 +163,12 @@ export function makeFakeHass(onUpdate, { agent = 'anthropic' } = {}) {
       { stat_consumption: 'sensor.garage_heater_energy', name: 'Garage heater', stat_rate: 'sensor.yaml_heater_power' },
       { stat_consumption: 'sensor.old_lamp_energy', name: 'Old lamp', stat_rate: 'sensor.old_lamp_power' },
       { stat_consumption: 'sensor.reading_lamp_energy', name: 'Reading lamp', included_in_stat: 'sensor.old_lamp_energy' },
+      { stat_consumption: 'sensor.aquarium_energy', name: 'Aquarium', stat_rate: 'sensor.aquarium_power' },
+      { stat_consumption: 'sensor.office_heater_energy', name: 'Office heater', stat_rate: 'sensor.office_heater_power' },
     ],
   };
   // Today's hourly statistics, as the recorder keeps them.
-  const perHour = { 'sensor.grid_import_energy': [0.6, 0.5, 0.5, 0.5, 0.6, 0.8, 1.4, 2.1, 1.6, 1.0, 0.9, 0.9, 1.1, 0.9, 0.8, 0.9, 1.2, 2.4, 2.6, 2.0, 1.5, 1.1, 0.9, 0.7], 'sensor.heat_pump_energy': 0.45, 'sensor.desk_plug_energy': 0.06, 'sensor.tv_plug_energy': 0.05, 'sensor.sofa_lamp_energy': 0.01, 'sensor.kettle_energy': 0.04, 'sensor.server_energy': 0.11, 'sensor.garage_heater_energy': 0.3, 'sensor.old_lamp_energy': 0, 'sensor.reading_lamp_energy': 0.02, 'sensor.lamp_plug_total_energy': 0.041 };
+  const perHour = { 'sensor.grid_import_energy': [0.6, 0.5, 0.5, 0.5, 0.6, 0.8, 1.4, 2.1, 1.6, 1.0, 0.9, 0.9, 1.1, 0.9, 0.8, 0.9, 1.2, 2.4, 2.6, 2.0, 1.5, 1.1, 0.9, 0.7], 'sensor.heat_pump_energy': 0.45, 'sensor.desk_plug_energy': 0.06, 'sensor.tv_plug_energy': 0.05, 'sensor.sofa_lamp_energy': 0.01, 'sensor.kettle_energy': 0.04, 'sensor.server_energy': 0.11, 'sensor.garage_heater_energy': 0.3, 'sensor.old_lamp_energy': 0, 'sensor.reading_lamp_energy': 0.02, 'sensor.lamp_plug_total_energy': 0.041, 'sensor.aquarium_energy': 0, 'sensor.office_heater_energy': 0 };
   // Hours from the start asked for (yesterday's a little lower than
   // today's), thirty days that wander, and five-minute power for a day.
   const hourly = (id, base, dayOff, hours) => Array.from({ length: hours }, (_, h) => {
@@ -195,6 +206,7 @@ export function makeFakeHass(onUpdate, { agent = 'anthropic' } = {}) {
   };
   const calls = [];
   const ws = [];
+  const flows = [];
   let hass;
   const rebuild = () => {
     hass = { ...hass, states: { ...states } };
@@ -211,7 +223,7 @@ export function makeFakeHass(onUpdate, { agent = 'anthropic' } = {}) {
     config: { location_name: 'Test House' },
     themes: { darkMode: true },
     language: 'en',
-    calls, ws, set,
+    calls, ws, set, flows,
     dashboard: { strategy: { type: 'custom:mosaic', accent: 'cobalt' } },
     callService: async (domain, service, data) => {
       calls.push({ domain, service, data });
@@ -223,7 +235,29 @@ export function makeFakeHass(onUpdate, { agent = 'anthropic' } = {}) {
       }, 100);
     },
     // Home Assistant's calendar API: the events in a range.
-    callApi: async (method, path) => {
+    callApi: async (method, path, data) => {
+      // Helper flows: an Integral helper made, or one's options changed.
+      if (method === 'POST' && path === 'config/config_entries/flow') {
+        flows.push({ start: data });
+        return { type: 'form', flow_id: `flow${flows.length}`, step_id: 'user', data_schema: [] };
+      }
+      if (method === 'POST' && /^config\/config_entries\/flow\/flow\d+$/.test(path)) {
+        flows.push({ input: data });
+        const id = `sensor.${data.name.toLowerCase().replace(/[^a-z0-9]+/g, '_')}`;
+        add(id, '0.0', { friendly_name: data.name, device_class: 'energy', unit_of_measurement: 'kWh', state_class: 'total' }, null, { platform: 'integration', config_entry_id: `made${flows.length}` });
+        hass = { ...hass, entities: { ...entities } };
+        rebuild();
+        return { type: 'create_entry', result: { entry_id: `made${flows.length}` } };
+      }
+      if (method === 'POST' && path === 'config/config_entries/options/flow') {
+        flows.push({ options: data });
+        const was = { int_aquarium: { source: 'sensor.aquarium_power', method: 'left', round: 2 } }[data.handler] || {};
+        return { type: 'form', flow_id: 'opts1', step_id: 'init', data_schema: Object.entries(was).map(([name, v]) => ({ name, description: { suggested_value: v } })) };
+      }
+      if (method === 'POST' && path === 'config/config_entries/options/flow/opts1') {
+        flows.push({ input: data });
+        return { type: 'create_entry', result: true };
+      }
       const m = /^calendars\/([^?]+)\?start=([^&]+)&end=(.+)$/.exec(path);
       if (method === 'GET' && m) {
         const [a, b] = [new Date(decodeURIComponent(m[2])), new Date(decodeURIComponent(m[3]))];
@@ -244,6 +278,9 @@ export function makeFakeHass(onUpdate, { agent = 'anthropic' } = {}) {
         calendarEvents[msg.entity_id] = (calendarEvents[msg.entity_id] || []).filter((e) => !(e.uid === msg.uid && (!msg.recurrence_id || e.recurrence_id === msg.recurrence_id)));
         return null;
       }
+      if (msg.type === 'manifest/list') return msg.integrations.map((domain) => ({ domain, iot_class: { tuya: 'cloud_poll', tuya_local: 'local_push', shelly: 'local_push' }[domain] || 'local_polling' }));
+      if (msg.type === 'config/entity_registry/list') return Object.values(entities);
+      if (msg.type === 'config/entity_registry/get') return entities[msg.entity_id] || null;
       if (msg.type === 'energy/get_prefs') return JSON.parse(JSON.stringify(energyPrefs));
       if (msg.type === 'recorder/statistics_during_period') return statsFor(msg);
       if (msg.type === 'energy/save_prefs') {

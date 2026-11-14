@@ -95,7 +95,10 @@ const SP = process.env.SP || '/tmp';
   // Pin from the list: hold a row, choose "pin to start".
   await page.evaluate(() => window.card.shadowRoot.querySelector('.tolist').click());
   await page.waitForTimeout(800);
-  const row = await page.evaluate(() => { const el = window.card.shadowRoot.querySelector('.listbody .row[data-device="kettle_plug"]'); el.scrollIntoView({ block: 'center' }); const r = el.getBoundingClientRect(); return [r.x + 80, r.y + r.height / 2]; });
+  // Scrolled to first, then measured once the list has settled.
+  await page.evaluate(() => window.card.shadowRoot.querySelector('.listbody .row[data-device="kettle_plug"]').scrollIntoView({ block: 'center' }));
+  await page.waitForTimeout(400);
+  const row = await page.evaluate(() => { const r = window.card.shadowRoot.querySelector('.listbody .row[data-device="kettle_plug"]').getBoundingClientRect(); return [r.x + 80, r.y + r.height / 2]; });
   await page.mouse.move(row[0], row[1]);
   await page.mouse.down();
   await page.waitForTimeout(800);

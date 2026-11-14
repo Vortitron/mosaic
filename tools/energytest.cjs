@@ -33,7 +33,7 @@ const URL = (process.env.URL || 'http://127.0.0.1:18766/tools/harness/') + '?bar
   assert.match(tiles.today, /kWh from the grid [\d.]+\s?SEK [▲▼] \d+% on yesterday by now/);
   assert.match(tiles.days, /7 days [\d.]+ kWh \d+ SEK 30 days/);
   assert.match(tiles.rooms, /Hallway 900 W.*not in a room 562 W/);
-  assert.match(tiles.check, /5 to look at 1 not working · 4 not counted/);
+  assert.match(tiles.check, /7 to look at 2 not working · 5 not counted · 1 offline/);
   const shape = await ev(() => ({
     dials: window.card.shadowRoot.querySelectorAll('.etile .edial svg.gauge').length,
     hours: window.card.shadowRoot.querySelectorAll('[data-tile="hours"] .eslot').length,
@@ -60,25 +60,35 @@ const URL = (process.env.URL || 'http://127.0.0.1:18766/tools/harness/') + '?bar
   await page.screenshot({ path: `${OUT}/energy-tab.png` });
 
   // The check: the old lamp's plug replaced (its power gone, its counter
-  // stopped), the new plug seen twice and in the same room, so offered as its
-  // replacement; the fridge can be added, the dehumidifier has no energy
-  // sensor; the desk plug's second integration is left out.
+  // stopped), the new plug seen twice (power locally, its total through the
+  // cloud) and in the same room, so offered as its replacement, counted at
+  // home; the aquarium's Integral counter lost its plug, the new one in the
+  // kitchen; the fridge can be added, the dehumidifier has only power; the
+  // desk plug's second integration is left out; the office heater is
+  // unplugged, so offline rather than broken.
   await ev(() => window.card.shadowRoot.querySelector('[data-echeck]').click());
   await page.waitForTimeout(400);
-  const rowsOf = () => ev(() => [...window.card.shadowRoot.querySelectorAll('.echeckpage .placerow')].map((r) => [r.querySelector('.ename').textContent, !!r.querySelector('[data-ecadd]'), !!r.querySelector('[data-ecswap]'), r.innerText.includes('Integral'), r.innerText.includes('reads the same'), r.innerText.includes('swap it in above')]));
+  const rowsOf = () => ev(() => [...window.card.shadowRoot.querySelectorAll('.echeckpage .placerow')].map((r) => [r.querySelector('.ename').textContent, !!r.querySelector('[data-ecadd]'), !!r.querySelector('[data-ecswap]'), r.innerText.includes('only reports power'), r.innerText.includes('reads the same'), r.innerText.includes('swap it in above'), r.classList.contains('off')]));
   const check = await rowsOf();
   console.log('check:', JSON.stringify(check));
   assert.deepEqual(check, [
-    ['Old lamp', false, true, false, false, false],
-    ['Dehumidifier Power', false, false, true, false, false],
-    ['Fridge', true, false, false, false, false],
-    ['Lamp plug', false, false, false, false, true],
-    ['Desk Plug (cloud) Power', false, false, false, true, false],
+    ['Old lamp', false, true, false, false, false, false],
+    ['Aquarium', false, true, false, false, false, false],
+    ['Dehumidifier Power', true, false, true, false, false, false],
+    ['Fridge', true, false, false, false, false, false],
+    ['Lamp plug', false, false, false, false, true, false],
+    ['Aquarium plug', false, false, false, false, true, false],
+    ['Desk Plug (cloud) Power', false, false, false, true, false, false],
+    ['Office heater', false, true, false, false, false, true],
   ]);
-  const why = await ev(() => window.card.shadowRoot.querySelector('.echeckpage .placerow').innerText);
-  assert.match(why, /power sensor is gone.*counted nothing today/s);
-  assert.match(why, /Lamp plug is in the same room and isn't counted \(41 W now\)/);
+  const whys = await ev(() => [...window.card.shadowRoot.querySelectorAll('.echeckpage .placerow')].map((r) => r.innerText));
+  assert.match(whys[0], /power sensor is gone.*counted nothing today/s);
+  assert.match(whys[0], /Lamp plug is in the same room and isn't counted \(41 W now\).*Mosaic makes it a counter here at home, from Lamp plug's power reading, rather than counting by its cloud total/s);
+  assert.match(whys[1], /Its counter, an Integral helper, then counts from Aquarium plug's power and carries on, its history kept/);
+  assert.match(whys[4], /cloud total sensor\.lamp_plug_total_energy/);
+  assert.match(whys[7], /offline.*since .*isn't answering/s);
   assert.equal(await ev(() => window.card.shadowRoot.querySelector('select[data-ecpick]').value), 'lamp_local');
+  assert.equal(await ev(() => window.card.shadowRoot.querySelector('select[data-ecpick="sensor.office_heater_energy"]').value), '', 'no guess for an unplugged one');
   await page.screenshot({ path: `${OUT}/energy-check.png` });
   const confirm = async (word) => {
     await page.waitForTimeout(300);
@@ -87,17 +97,31 @@ const URL = (process.env.URL || 'http://127.0.0.1:18766/tools/harness/') + '?bar
     await page.waitForTimeout(800);
     return text;
   };
-  // Swap: the old lamp keeps its name, counted by the new plug; the reading
-  // lamp inside it moves along.
+  // Swap: the old lamp keeps its name, counted by a counter made at home
+  // from the new plug's power (not its cloud total); the reading lamp inside
+  // it moves along.
   await ev(() => window.card.shadowRoot.querySelector('[data-ecswap="sensor.old_lamp_energy"]').click());
   const said = await confirm('swap');
   console.log('swap asks:', said.replace(/\s+/g, ' '));
+  assert.match(said, /new energy counter made from sensor\.lamp_plug_power here at home.*rather than the cloud total.*earlier days stop showing/s);
+  await page.waitForTimeout(400);
+  const made = await ev(() => window.hass.flows);
+  assert.deepEqual(made.slice(0, 2), [{ start: { handler: 'integration', show_advanced_options: false } }, { input: { name: 'Lamp plug energy', source: 'sensor.lamp_plug_power', method: 'left', round: 3, unit_prefix: 'k', unit_time: 'h', max_sub_interval: { hours: 0, minutes: 5, seconds: 0 } } }]);
   const swapped = await ev(() => window.hass.ws.filter((m) => m.type === 'energy/save_prefs').at(-1).device_consumption.filter((d) => /lamp/.test(d.name)));
   console.log('swapped:', JSON.stringify(swapped));
   assert.deepEqual(swapped.slice(-2), [
-    { stat_consumption: 'sensor.lamp_plug_total_energy', name: 'Old lamp', stat_rate: 'sensor.lamp_plug_power' },
-    { stat_consumption: 'sensor.reading_lamp_energy', name: 'Reading lamp', included_in_stat: 'sensor.lamp_plug_total_energy' },
+    { stat_consumption: 'sensor.lamp_plug_energy', name: 'Old lamp', stat_rate: 'sensor.lamp_plug_power' },
+    { stat_consumption: 'sensor.reading_lamp_energy', name: 'Reading lamp', included_in_stat: 'sensor.lamp_plug_energy' },
   ]);
+  // The aquarium's Integral counter, pointed at its new plug: its history kept.
+  await ev(() => window.card.shadowRoot.querySelector('[data-ecswap="sensor.aquarium_energy"]').click());
+  const said2 = await confirm('swap');
+  console.log('repoint asks:', said2.replace(/\s+/g, ' '));
+  assert.match(said2, /carrying on where it stopped, so its history is kept/);
+  await page.waitForTimeout(400);
+  assert.deepEqual((await ev(() => window.hass.flows)).slice(2), [{ options: { handler: 'int_aquarium' } }, { input: { source: 'sensor.aquarium_plug_power', method: 'left', round: 2 } }]);
+  const tank = await ev(() => window.hass.ws.filter((m) => m.type === 'energy/save_prefs').at(-1).device_consumption.find((d) => d.name === 'Aquarium'));
+  assert.deepEqual(tank, { stat_consumption: 'sensor.aquarium_energy', name: 'Aquarium', stat_rate: 'sensor.aquarium_plug_power' });
   // The fridge, added behind the TV plug.
   await ev(() => { const s = window.card.shadowRoot.querySelector('select[data-ecin="fridge_plug"]'); s.value = 'sensor.tv_plug_energy'; });
   await ev(() => window.card.shadowRoot.querySelector('[data-ecadd="fridge_plug"]').click());
@@ -109,7 +133,7 @@ const URL = (process.env.URL || 'http://127.0.0.1:18766/tools/harness/') + '?bar
   await page.waitForTimeout(500);
   const left = (await rowsOf()).map((r) => r[0]);
   console.log('left:', JSON.stringify(left));
-  assert.deepEqual(left, ['Dehumidifier Power', 'Desk Plug (cloud) Power'], 'counted now, so off the list');
+  assert.deepEqual(left, ['Dehumidifier Power', 'Desk Plug (cloud) Power', 'Office heater'], 'counted now, so off the list');
   await ev(() => window.card._close());
   await page.waitForTimeout(300);
 

@@ -34,7 +34,7 @@ test('a room tile counts lit lamps and carries the temperature on its back', () 
 });
 
 test('room pivots leave out diagnostics and empty pivots', () => {
-  assert.deepEqual(roomPivots(hass, 'kitchen').map(([p, ids]) => [p, ids.length]), [['lights', 2], ['power', 1], ['climate', 2], ['sensors', 2]]);
+  assert.deepEqual(roomPivots(hass, 'kitchen').map(([p, ids]) => [p, ids.length]), [['lights', 2], ['power', 1], ['climate', 2], ['sensors', 4]]);
   assert.equal(shortName(hass, 'light.kitchen_ceiling', hass.areas.kitchen), 'Ceiling');
 });
 

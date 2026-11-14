@@ -1,12 +1,15 @@
 // The README's screenshots, from the harness (a made-up house, so nothing
 // real is in them): node tools/readme-shots.cjs [outdir]  (harness on :18766)
+// ONLY=energy,check remakes just those.
 const { chromium } = require('playwright');
 const BASE = process.env.URL || 'http://127.0.0.1:18766/tools/harness/?bare';
 const OUT = process.argv[2] || 'docs';
+const ONLY = process.env.ONLY ? new Set(process.env.ONLY.split(',')) : null;
 (async () => {
   const browser = await chromium.launch();
   const errors = [];
   const shot = async (name, { w = 390, h = 760, query = '', act = async () => {} } = {}) => {
+    if (ONLY && !ONLY.has(name)) return;
     const page = await browser.newPage({ viewport: { width: w, height: h }, deviceScaleFactor: 2 });
     page.on('pageerror', (e) => errors.push(`${name}: ${e.message}`));
     await page.goto(BASE + query);
@@ -61,6 +64,19 @@ const OUT = process.argv[2] || 'docs';
     await p.evaluate(() => window.card.shadowRoot.querySelector('.tile.sel .ebtn.resize').click());
     await p.evaluate(() => { window.card.shadowRoot.querySelector('.page.start').scrollTop = 300; });
     await p.waitForTimeout(300);
+  } });
+  // The energy tab, on a desktop and a phone, and its check.
+  const energy = async (p) => {
+    await p.evaluate(() => window.card._goTab('energy'));
+    await p.waitForFunction(() => window.card.shadowRoot.querySelector('[data-tile="hours"] .eslot'));
+    await p.waitForTimeout(1200);
+  };
+  await shot('energy', { w: 1280, h: 1440, query: '&plan', act: energy });
+  await shot('energy-phone', { query: '&plan', act: energy });
+  await shot('check', { query: '&plan', act: async (p) => {
+    await energy(p);
+    await p.evaluate(() => window.card.shadowRoot.querySelector('[data-echeck]').click());
+    await p.waitForTimeout(600);
   } });
   await shot('desktop', { w: 1280, h: 760, query: '&theme=light&accent=magenta&plan' });
   console.log('problems:', errors.length ? errors : 'none');

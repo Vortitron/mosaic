@@ -546,6 +546,7 @@ button { font: inherit; color: inherit; background: none; border: 0; padding: 0;
 .ebig.ecount { font-size: 30px; margin-top: 0; }
 .etile:not(.h2):not(.h3) { padding: 7px 12px 6px; }
 .eline1 { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.eparts { margin-top: 6px; line-height: 1.35; }
 .etrend { font-size: 12px; opacity: .92; }
 .echart { position: relative; flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; margin-top: 2px; }
 .echart svg { flex: 1 1 auto; min-height: 0; width: 100%; display: block; overflow: visible; }
@@ -586,6 +587,7 @@ button { font: inherit; color: inherit; background: none; border: 0; padding: 0;
 .placehead { display: flex; justify-content: space-between; gap: 12px; font-size: 17px; }
 .placehead .evalue { color: var(--fg2); font-variant-numeric: tabular-nums; }
 .placerow .eid { display: block; color: var(--fg2); font-size: 12px; margin: 2px 0 6px; overflow-wrap: anywhere; }
+.placerow.off .ename, .placerow.off .evalue { color: var(--fg2); }
 .placesel { font: inherit; font-size: 16px; padding: 8px 10px; border: 2px solid var(--line); background: var(--bg); color: var(--fg); min-height: 44px; }
 .enote { color: var(--fg2); }
 .ecact { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; margin-top: 4px; }

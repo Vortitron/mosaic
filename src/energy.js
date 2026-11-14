@@ -6,8 +6,8 @@
 // and the long-term statistics it keeps for them, so it agrees with that
 // dashboard. Mixed into the card like the calendar.
 
-import { cheapest, deviceTree, energyCheck, energyNow, energySources, kwhText, meterPower, priceSeries, statHours, statTotal, swapDevice, wattsText, withDevice } from './power.js';
-import { nameOf } from './model.js';
+import { cheapest, counterInput, deviceTree, energyCheck, energyNow, energySources, kwhText, meterPower, priceSeries, repointDevice, statHours, statTotal, swapDevice, wattsText, withDevice } from './power.js';
+import { areaOf, nameOf } from './model.js';
 import { gaugeSvg } from './gauge.js';
 
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
@@ -142,8 +142,11 @@ export const energyMethods = {
       this._energyPower = power ? { ids: powers, rows: power } : null;
       this._energyStatsAt = Date.now();
       this._energyStatsDay = now.toDateString();
+      // Which integrations reach their plugs through the cloud: a plug read
+      // locally is then counted at home rather than by its cloud total.
+      await this._energyCloud();
       // The check's candidates: their energy today, to tell a duplicate.
-      const cands = energyCheck(hass, prefs).missing.map((m) => m.energy).filter(Boolean);
+      const cands = this._echeck().missing.map((m) => m.energy).filter(Boolean);
       // Today's and yesterday's: a match has to hold on both days, or it is chance.
       const extra = cands.length ? await ask({ start_time: yesterday.toISOString(), statistic_ids: cands, period: 'hour', types: ['change'], units: { energy: 'kWh' } }) : null;
       const cut = (rows, from, to) => rows && Object.fromEntries(Object.entries(rows).map(([id, r]) => [id, r.filter((x) => tsOf(x) >= from && tsOf(x) < to)]));
@@ -171,7 +174,8 @@ export const energyMethods = {
     const inner = box.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight);
     const gap = parseFloat(cs.columnGap) || 6;
     const desk = this.shadowRoot.querySelector('.root.desk');
-    const cols = desk ? Math.max(6, Math.round(inner / 140)) : 4;
+    // Even, as every tile is two or four wide: an odd one leaves a column empty.
+    const cols = desk ? Math.max(6, 2 * Math.round(inner / 280)) : 4;
     box.style.setProperty('--ecols', String(cols));
     box.style.setProperty('--eunit', `${Math.floor((inner - gap * (cols - 1)) / cols)}px`);
   },
@@ -384,14 +388,32 @@ export const energyMethods = {
     if (!this._energyPrefs) return '';
     const c = this._echeck();
     const n = c.problems.length + c.missing.length;
+    const parts = [c.problems.length && `${c.problems.length} not working`, c.missing.length && `${c.missing.length} not counted`, c.offline.length && `${c.offline.length} offline`].filter(Boolean);
     const body = n
-      ? `<div class="ebig ecount">${n}<small>to look at</small></div><div class="esub eline1">${c.problems.length ? `${c.problems.length} not working` : ''}${c.problems.length && c.missing.length ? ' · ' : ''}${c.missing.length ? `${c.missing.length} not counted` : ''} →</div>`
-      : '<div class="esub">everything that uses power is counted</div>';
-    return tile('check', `w2 h1${n ? ' alert' : ''}`, 'check', body, n ? ' data-echeck="" role="button" tabindex="0"' : '');
+      ? `<div class="ebig ecount">${n}<small>to look at</small></div><div class="esub eparts">${parts.join(' · ')} →</div>`
+      : `<div class="esub">everything that uses power is counted${c.offline.length ? ` · ${c.offline.length} offline →` : ''}</div>`;
+    const open = n || c.offline.length;
+    return tile('check', `w2 h2${n ? ' alert' : ''}`, 'check', body, open ? ' data-echeck="" role="button" tabindex="0"' : '');
   },
 
   _echeck() {
-    return energyCheck(this._hass, this._energyPrefs, this._energyTotals, this._energyTotalsBefore);
+    return energyCheck(this._hass, this._energyPrefs, this._energyTotals, this._energyTotalsBefore, { cloud: this._cloudDomains || null });
+  },
+
+  // The integrations behind the house's power and energy sensors that are
+  // cloud ones (their manifest's iot_class), asked for once.
+  async _energyCloud() {
+    if (this._cloudDomains) return;
+    const hass = this._hass;
+    const units = new Set(['W', 'kW', 'Wh', 'kWh', 'MWh']);
+    const domains = [...new Set(Object.values(hass.entities || {}).filter((e) => e.platform && hass.states[e.entity_id] && units.has(hass.states[e.entity_id].attributes.unit_of_measurement)).map((e) => e.platform))];
+    if (!domains.length) return;
+    try {
+      const list = await hass.callWS({ type: 'manifest/list', integrations: domains });
+      this._cloudDomains = new Set(list.filter((m) => /^cloud/.test(m.iot_class || '')).map((m) => m.domain));
+    } catch (_) {
+      this._cloudDomains = new Set();
+    }
   },
 
   // The check, full screen: what is broken, then what is not counted, each
@@ -425,15 +447,20 @@ export const energyMethods = {
     const byKey = new Map(c.missing.map((m) => [m.key, m]));
     const named = new Map(((this._energyPrefs && this._energyPrefs.device_consumption) || []).map((d) => [d.stat_consumption, d.name || d.stat_consumption]));
     // A broken entry: what is wrong, and (for an admin) a plug to count it by instead.
+    const pickOf = (p) => {
+      const opts = p.choices.map((k) => `<option value="${esc(k)}"${k === p.suggest ? ' selected' : ''}>${esc(byKey.get(k).name)} · ${esc(wattsText(byKey.get(k).w))}</option>`).join('');
+      return `<div class="ecact"><label class="esub">count it by <select data-ecpick="${esc(p.key)}">${p.suggest ? '' : '<option value="">choose…</option>'}${opts}</select></label><button class="pbtn" data-ecswap="${esc(p.key)}">swap</button></div>`;
+    };
     const problems = c.problems.map((p) => {
       let act = '';
-      if (p.suggest) act = `<p class="esub"><b>${esc(byKey.get(p.suggest).name)}</b> is in the same room and isn't counted (${esc(wattsText(byKey.get(p.suggest).w))} now). If it is the new plug, or the same plug through another integration, count ${esc(p.name)} by it.</p>`;
-      if (can && p.choices.length) {
-        const opts = p.choices.map((k) => `<option value="${esc(k)}"${k === p.suggest ? ' selected' : ''}>${esc(byKey.get(k).name)} · ${esc(wattsText(byKey.get(k).w))}</option>`).join('');
-        act += `<div class="ecact"><label class="esub">count it by <select data-ecpick="${esc(p.key)}">${p.suggest ? '' : '<option value="">choose…</option>'}${opts}</select></label><button class="pbtn" data-ecswap="${esc(p.key)}">swap</button></div>`;
-      } else if (!p.choices.length || !can) act += '<p class="esub">Fix it in Home Assistant\'s Energy dashboard settings.</p>';
+      const s = p.suggest && byKey.get(p.suggest);
+      if (s) act = `<p class="esub"><b>${esc(s.name)}</b> is in the same room and isn't counted (${esc(wattsText(s.w))} now). If it is the new plug, or the same plug through another integration, count ${esc(p.name)} by it.${p.integral ? ` Its counter, an Integral helper, then counts from ${esc(s.name)}'s power and carries on, its history kept.` : s.energy && !s.cloud ? '' : ` Mosaic makes it a counter here at home, from ${esc(s.name)}'s power reading${s.cloud ? ', rather than counting by its cloud total' : ''}.`}</p>`;
+      if (can && p.choices.length) act += pickOf(p);
+      else act += '<p class="esub">Fix it in Home Assistant\'s Energy dashboard settings.</p>';
       return `<div class="placerow"><div class="placehead"><span class="ename">${esc(p.name)}</span></div><small class="eid">${esc(p.id)}</small><p class="esub">${esc(p.why[0].toUpperCase() + p.why.slice(1))}.</p>${act}</div>`;
     }).join('');
+    const day = (t) => { const d = new Date(t); return Number.isNaN(d.getTime()) ? '' : d.toLocaleDateString(hass.language || undefined, { day: 'numeric', month: 'short' }); };
+    const offline = c.offline.map((o) => `<div class="placerow off"><div class="placehead"><span class="ename">${esc(o.name)}</span><span class="evalue">offline</span></div><small class="eid">${esc(o.id)}${o.since && day(o.since) ? ` · since ${esc(day(o.since))}` : ''}</small><p class="esub">Its plug isn't answering: unplugged, switched off at the wall or out of reach. Its counter is still there, so it counts again when the plug is back.${can && o.choices.length ? ' If the plug has been replaced, count it by the new one.' : ''}</p>${can && o.choices.length ? pickOf(o) : ''}</div>`).join('');
     const insideOpts = [...named].map(([k, n]) => `<option value="${esc(k)}">${esc(n)}</option>`).join('');
     const missing = c.missing.map((m) => {
       const where = m.area && areas[m.area] ? areas[m.area].name : 'no room';
@@ -441,11 +468,13 @@ export const energyMethods = {
       if (m.like && m.pair) act = `<p class="esub">It adds up to <b>${esc(m.like)}</b>, which are counted: one machine on two feeds, most likely. Leave it out.</p>`;
       else if (m.like) act = `<p class="esub">It reads the same as <b>${esc(m.like)}</b>, which is counted: probably the same plug through a second integration. Leave it out.</p>`;
       else if (m.replaces) act = `<p class="esub">In the same room as <b>${esc(m.replaces)}</b>, whose sensors have stopped. If it is that one's new plug, swap it in above, so what is set inside ${esc(m.replaces)} moves with it.</p>`;
-      else if (!m.energy) act = '<p class="esub">It only reports power. Home Assistant needs an energy sensor to count it: add an <i>Integral</i> helper (Settings → Helpers) on this power sensor, then add that to the Energy dashboard.</p>';
-      if (can && m.energy && !m.like && !m.replaces) act += `<div class="ecact"><label class="esub">inside <select data-ecin="${esc(m.key)}"><option value="">nothing</option>${insideOpts}</select></label><button class="pbtn" data-ecadd="${esc(m.key)}">add to the Energy dashboard</button></div>`;
-      return `<div class="placerow"><div class="placehead"><span class="ename">${esc(m.name)}</span><span class="evalue">${esc(wattsText(m.w))}</span></div><small class="eid">${esc(m.power)}${m.energy ? ` · counts by ${esc(m.energy)}` : ''} · ${esc(where)}</small>${act}</div>`;
+      else if (m.cloud) act = `<p class="esub">Its total only comes through the cloud. ${can ? 'Added, it is counted here at home instead, by a counter Mosaic makes from its power reading (an <i>Integral</i> helper, counting from then).' : 'An admin can count it here at home, from its power reading.'}</p>`;
+      else if (!m.energy) act = `<p class="esub">It only reports power. ${can ? 'Added, it is counted by a counter Mosaic makes from that (an <i>Integral</i> helper, counting from then).' : 'Home Assistant needs an energy sensor to count it: an <i>Integral</i> helper on this power sensor.'}</p>`;
+      if (can && !m.like && !m.replaces) act += `<div class="ecact"><label class="esub">inside <select data-ecin="${esc(m.key)}"><option value="">nothing</option>${insideOpts}</select></label><button class="pbtn" data-ecadd="${esc(m.key)}">add to the Energy dashboard</button></div>`;
+      const by = m.energy && !m.cloud ? ` · counts by ${esc(m.energy)}` : m.energy ? ` · cloud total ${esc(m.energy)}` : '';
+      return `<div class="placerow"><div class="placehead"><span class="ename">${esc(m.name)}</span><span class="evalue">${esc(wattsText(m.w))}</span></div><small class="eid">${esc(m.power)}${by} · ${esc(where)}</small>${act}</div>`;
     }).join('');
-    const html = `${c.problems.length ? `<h3 class="echead">not working</h3>${problems}` : ''}${c.missing.length ? `<h3 class="echead">not counted</h3><p class="esub">These use power, but nothing in the Energy dashboard counts them.</p>${missing}` : ''}${!c.problems.length && !c.missing.length ? '<p class="esub">Everything that uses power is counted, and every sensor the Energy dashboard uses is working.</p>' : ''}`;
+    const html = `${c.problems.length ? `<h3 class="echead">not working</h3>${problems}` : ''}${c.missing.length ? `<h3 class="echead">not counted</h3><p class="esub">These use power, but nothing in the Energy dashboard counts them.</p>${missing}` : ''}${!c.problems.length && !c.missing.length ? '<p class="esub">Everything that uses power is counted, and every sensor the Energy dashboard uses is working.</p>' : ''}${c.offline.length ? `<h3 class="echead">offline</h3>${offline}` : ''}`;
     if (page.dataset.html === html) return;
     // What was chosen in a list stays chosen when the page is drawn again.
     const kept = [...page.querySelectorAll('select')].map((x) => [(x.outerHTML.match(/data-[a-z]+="[^"]*"/) || [])[0], x.value]).filter(([a, v]) => a && v);
@@ -460,24 +489,94 @@ export const energyMethods = {
   async _energyAdd(key) {
     const hass = this._hass;
     const m = this._echeck().missing.find((x) => x.key === key);
-    if (!m || !m.energy) return;
+    if (!m || (!m.energy && !m.power)) return;
     const pick = [...this.shadowRoot.querySelectorAll('select[data-ecin]')].find((x) => x.dataset.ecin === key);
     const inside = (pick && pick.value) || null;
     const outer = inside && ((this._energyPrefs.device_consumption || []).find((d) => d.stat_consumption === inside) || {}).name;
-    this._ask({ title: `Count ${m.name}?`, text: `Adds it to Home Assistant's Energy dashboard as a device, counted by ${m.energy}${m.power ? `, its power from ${m.power}` : ''}${inside ? `, inside ${outer || inside}` : ''}.`, yes: 'add', then: () => this._saveDevices((fresh) => withDevice(fresh, { energy: m.energy, power: m.power, name: m.name, inside }), `${m.name} is counted now`, 'Not added') });
+    const make = !m.energy || m.cloud;
+    const by = make ? `a new energy counter made from ${m.power} here at home (an Integral helper, counting from now${m.cloud ? `, rather than the cloud total ${m.energy}` : ''})` : m.energy;
+    this._ask({ title: `Count ${m.name}?`, text: `Adds it to Home Assistant's Energy dashboard as a device, counted by ${by}${m.power ? `, its power from ${m.power}` : ''}${inside ? `, inside ${outer || inside}` : ''}.`, yes: 'add', then: async () => {
+      const energy = make ? await this._makeCounter(m.power, `${m.name} energy`, m.area).catch((err) => { this._toast(`Not added: ${(err && err.message) || err}`); return null; }) : m.energy;
+      if (energy) this._saveDevices((fresh) => withDevice(fresh, { energy, power: m.power, name: m.name, inside }), `${m.name} is counted now`, 'Not added');
+    } });
   },
 
   // A broken entry counted by another plug's sensors instead.
   async _energySwap(key) {
     const hass = this._hass;
     const c = this._echeck();
-    const p = c.problems.find((x) => x.key === key);
+    const p = c.problems.find((x) => x.key === key) || c.offline.find((x) => x.key === key);
     const pick = [...this.shadowRoot.querySelectorAll('select[data-ecpick]')].find((x) => x.dataset.ecpick === key);
     const m = p && pick && c.missing.find((x) => x.key === pick.value);
-    if (!m || !m.energy) return this._toast('Choose what to count it by first');
+    if (!m || (!m.energy && !m.power)) return this._toast('Choose what to count it by first');
+    const done = `${p.name} counts by ${m.name} now`;
+    const fail = (err) => { this._toast(`Not swapped: ${(err && err.message) || err}`); return null; };
+    // Its counter is an Integral helper: point that at the new plug's power,
+    // and it carries on where it stopped.
+    if (p.integral && m.power) {
+      this._ask({ title: `Count ${p.name} by ${m.name}?`, text: `${p.name}'s energy counter, ${p.key} (an Integral helper), counts from ${m.power} from now on, carrying on where it stopped, so its history is kept and nothing else in the Energy dashboard changes.`, yes: 'swap', then: async () => {
+        if (await this._repointCounter(p.key, m.power).then(() => true, fail)) this._saveDevices((fresh) => repointDevice(fresh, key, m.power), done, 'Not swapped');
+      } });
+      return undefined;
+    }
+    const make = !m.energy || m.cloud;
     const inner = ((this._energyPrefs.device_consumption) || []).filter((d) => d.included_in_stat === key).map((d) => d.name || d.stat_consumption);
-    this._ask({ title: `Count ${p.name} by ${m.name}?`, text: `${p.name} keeps its name and place in the Energy dashboard, counted by ${m.energy}${m.power ? `, its power from ${m.power}` : ''}.${inner.length ? ` ${inner.join(', ')}, set inside it, ${inner.length > 1 ? 'move' : 'moves'} with it.` : ''} Its past days are then drawn from the new counter's history; the old counter's stays recorded.`, yes: 'swap', then: () => this._saveDevices((fresh) => swapDevice(fresh, key, { energy: m.energy, power: m.power }), `${p.name} counts by ${m.name} now`, 'Not swapped') });
+    const by = make ? `a new energy counter made from ${m.power} here at home (an Integral helper${m.cloud ? `, rather than the cloud total ${m.energy}` : ''})` : m.energy;
+    const history = make
+      ? `The new counter starts now, so ${p.name}'s earlier days stop showing in the Energy dashboard; they stay recorded under the old counter.`
+      : `Its earlier days then show ${m.energy}'s history, which is that plug's, whatever it was plugged into; the old counter's stays recorded.`;
+    this._ask({ title: `Count ${p.name} by ${m.name}?`, text: `${p.name} keeps its name and place in the Energy dashboard, counted by ${by}${m.power ? `, its power from ${m.power}` : ''}.${inner.length ? ` ${inner.join(', ')}, set inside it, ${inner.length > 1 ? 'move' : 'moves'} with it.` : ''} ${history}`, yes: 'swap', then: async () => {
+      // In the room of what it replaces, so that stays where it was.
+      const room = [p.key, p.id].map((id) => areaOf(hass, id)).find(Boolean);
+      const energy = make ? await this._makeCounter(m.power, `${m.name} energy`, (room && room.area_id) || m.area).catch(fail) : m.energy;
+      if (energy) this._saveDevices((fresh) => swapDevice(fresh, key, { energy, power: m.power }), done, 'Not swapped');
+    } });
     return undefined;
+  },
+
+  // An Integral helper counting a plug's power in kWh, made as Home
+  // Assistant's own helper flow would, and put in a room: its new sensor's
+  // entity id. (It joins the plug's device, which may have no room.)
+  async _makeCounter(power, name, area = null) {
+    const hass = this._hass;
+    const base = 'config/config_entries/flow';
+    let step = await hass.callApi('POST', base, { handler: 'integration', show_advanced_options: false });
+    if (step.type === 'form') step = await hass.callApi('POST', `${base}/${step.flow_id}`, counterInput(name, power));
+    if (step.type !== 'create_entry') {
+      if (step.flow_id) hass.callApi('DELETE', `${base}/${step.flow_id}`).catch(() => {});
+      throw new Error(`the counter wasn't made${step.errors ? ` (${Object.values(step.errors).join(', ')})` : ''}`);
+    }
+    const entry = step.result && step.result.entry_id;
+    for (let i = 0; i < 10; i++) {
+      const list = await hass.callWS({ type: 'config/entity_registry/list' });
+      const made = list.find((e) => e.config_entry_id === entry);
+      if (made) {
+        if (area) await hass.callWS({ type: 'config/entity_registry/update', entity_id: made.entity_id, area_id: area }).catch(() => {});
+        return made.entity_id;
+      }
+      await new Promise((r) => setTimeout(r, 500));
+    }
+    throw new Error('the counter was made but has no sensor yet; add it from the check in a minute');
+  },
+
+  // An Integral helper set to count from another power sensor, everything
+  // else about it as it was.
+  async _repointCounter(counter, power) {
+    const hass = this._hass;
+    const reg = await hass.callWS({ type: 'config/entity_registry/get', entity_id: counter });
+    if (!reg || !reg.config_entry_id) throw new Error(`${counter} has no settings to change`);
+    const base = 'config/config_entries/options/flow';
+    let step = await hass.callApi('POST', base, { handler: reg.config_entry_id });
+    const keep = {};
+    for (const f of step.data_schema || []) {
+      const v = f.description && f.description.suggested_value;
+      if (v !== undefined && v !== null) keep[f.name] = v;
+    }
+    step = await hass.callApi('POST', `${base}/${step.flow_id}`, { ...keep, source: power });
+    if (step.type !== 'create_entry') {
+      if (step.flow_id) hass.callApi('DELETE', `${base}/${step.flow_id}`).catch(() => {});
+      throw new Error(`its counter wasn't changed${step.errors ? ` (${Object.values(step.errors).join(', ')})` : ''}`);
+    }
   },
 
   // Saves the Energy dashboard's devices, changed from what it has now.
