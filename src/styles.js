@@ -523,6 +523,7 @@ button { font: inherit; color: inherit; background: none; border: 0; padding: 0;
 .etile.h3 { grid-row: span 3; }
 .etile:nth-child(2) { animation-delay: 40ms; } .etile:nth-child(3) { animation-delay: 80ms; } .etile:nth-child(4) { animation-delay: 120ms; } .etile:nth-child(n+5) { animation-delay: 160ms; }
 @keyframes etileIn { from { opacity: 0; transform: perspective(800px) rotateY(-28deg) translateX(-8px); } to { opacity: 1; transform: none; } }
+.etile.still { animation: none; }
 @media (prefers-reduced-motion: reduce) { .etile { animation: none; } }
 .etile.alert { background: color-mix(in srgb, var(--accent) 55%, #000); }
 .etile[data-echeck] { cursor: pointer; }

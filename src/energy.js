@@ -189,14 +189,26 @@ export const energyMethods = {
     if (this._energyStatsAt && Date.now() - this._energyStatsAt > STATS_EVERY) this._energyStats();
     const tiles = [this._etNow(), this._etPower(), this._etPriceDial(), this._etPrices(), this._etToday(), this._etHours(), this._etDays(), this._etRooms(), this._etDevices(), this._etCheck()].filter(Boolean);
     const keys = tiles.map((t) => /data-tile="([^"]+)"/.exec(t)[1]).join(',');
+    // Each tile is compared with the html it was drawn from, never with its
+    // outerHTML: the browser writes some of it back differently (an
+    // apostrophe, a '>' in a tooltip, an SVG path), so that never matched
+    // and every tile was redrawn, fading in again, on every update.
     if (box.dataset.keys !== keys) {
       box.dataset.keys = keys;
       box.innerHTML = tiles.join('');
+      tiles.forEach((html, i) => { if (box.children[i]) box.children[i]._html = html; });
       return;
     }
     tiles.forEach((html, i) => {
       const el = box.children[i];
-      if (el && el.outerHTML !== html) el.outerHTML = html;
+      if (!el || el._html === html) return;
+      // A tile whose reading moved is drawn again in place, without fading in.
+      const t = document.createElement('template');
+      t.innerHTML = html;
+      const next = t.content.firstElementChild;
+      next.classList.add('still');
+      next._html = html;
+      el.replaceWith(next);
     });
   },
 

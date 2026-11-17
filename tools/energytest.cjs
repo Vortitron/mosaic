@@ -59,6 +59,33 @@ const URL = (process.env.URL || 'http://127.0.0.1:18766/tools/harness/') + '?bar
   await page.mouse.move(5, 5);
   await page.screenshot({ path: `${OUT}/energy-tab.png` });
 
+  // Updates that move nothing the tiles show leave every tile alone; they
+  // were all redrawn on each one, fading in again, many times a second.
+  const redraws = async (power) => ev(async (id) => {
+    const box = window.card.shadowRoot.querySelector('.tabpane.energy .etiles');
+    const seen = [];
+    const mo = new MutationObserver((ms) => { for (const m of ms) for (const n of m.addedNodes) if (n.dataset) seen.push(`${n.dataset.tile}${n.classList.contains('still') ? '' : ' (fading in)'}`); });
+    mo.observe(box, { childList: true });
+    const light = Object.keys(window.hass.states).find((e) => e.startsWith('light.'));
+    for (let i = 0; i < 3; i++) {
+      if (id) window.hass.set(id, (2.1 + i / 10).toFixed(1));
+      else window.hass.set(light, window.hass.states[light].state === 'on' ? 'off' : 'on');
+      await new Promise((r) => setTimeout(r, 150));
+    }
+    await new Promise((r) => setTimeout(r, 300));
+    mo.disconnect();
+    return [...new Set(seen)];
+  }, power);
+  const idle = await redraws(null);
+  console.log('redrawn by a light switching:', JSON.stringify(idle));
+  assert.deepEqual(idle, [], 'no tile redrawn when nothing it shows moved');
+  const moved = await redraws('sensor.grid_power');
+  console.log('redrawn by the grid power moving:', JSON.stringify(moved));
+  assert.ok(moved.includes('now'), 'the now tile follows the grid');
+  assert.ok(moved.every((t) => !t.endsWith('(fading in)')), 'a tile drawn again in place does not fade in');
+  await ev(() => window.hass.set('sensor.grid_power', '1.9'));
+  await page.waitForTimeout(200);
+
   // The check: the old lamp's plug replaced (its power gone, its counter
   // stopped), the new plug seen twice (power locally, its total through the
   // cloud) and in the same room, so offered as its replacement, counted at
