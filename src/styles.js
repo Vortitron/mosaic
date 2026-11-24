@@ -34,7 +34,7 @@ button { font: inherit; color: inherit; background: none; border: 0; padding: 0;
 .editing .hub { visibility: hidden; }
 .tabpane { flex: 1 1 auto; min-height: 0; display: none; position: relative; }
 .tabpane.on { display: block; }
-.tabpane.settings.on, .tabpane.calendar.on { display: flex; }
+.tabpane.settings.on, .tabpane.calendar.on, .tabpane.clock.on { display: flex; }
 .app.intab { flex: 1 1 auto; min-height: 0; min-width: 0; display: flex; flex-direction: column; position: relative; }
 .app.intab .pivots button { font-size: 22px; }
 .desk .app.intab .pivots, .desk .app.intab .ppage { padding-left: 16px; }
@@ -448,6 +448,94 @@ button { font: inherit; color: inherit; background: none; border: 0; padding: 0;
 .msg .menu button { display: block; width: 100%; text-align: left; font-size: 20px; font-weight: 350; padding: 10px 0; }
 
 @media (prefers-reduced-motion: reduce) { .overlay, .msg .box { animation: none; } .tile { transition: none; } }
+
+/* --- the clock tab: a face to learn the time from, and countdowns --------- */
+:host {
+  --clkface1: #050609; --clkface2: #0a1517; --clkrim: #2c2c2c; --clkhalo: rgba(255,255,255,.07);
+  --clkhand: #f4f4f4; --clknum: #ececec; --clkpin: #4b4b66; --clkmin: #5a5a5a;
+  --clkdigital: color-mix(in srgb, var(--accent) 40%, #c9c6ff);
+}
+:host(.light) {
+  --clkface1: #ffffff; --clkface2: #f1f4f6; --clkrim: #cfcfcf; --clkhalo: rgba(0,0,0,.08);
+  --clkhand: #111; --clknum: #111; --clkpin: #777; --clkmin: #aaa;
+  --clkdigital: var(--accent2);
+}
+.app.clock { padding: 0 var(--pad) 16px; overflow-y: auto; background: var(--bg); }
+.desk .app.clock { padding: 0 16px 16px; }
+.clockbar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 4px 0 6px; }
+.clockbar .pbtn { margin-bottom: 0; }
+.clockopts { display: flex; flex-wrap: wrap; gap: 6px; }
+/* A phone: the options in one row that slides, the buttons beside it. */
+.root:not(.desk) .clockbar { flex-wrap: nowrap; }
+.root:not(.desk) .clockopts { flex: 1 1 auto; min-width: 0; flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; }
+.root:not(.desk) .clockopts::-webkit-scrollbar { display: none; }
+.root:not(.desk) .clockbar .housefill { display: none; }
+.root:not(.desk) .clockbar .wordy { display: none; }
+.root:not(.desk) .clockbar .pbtn { min-width: 44px; min-height: 40px; font-size: 18px; padding: 4px 10px; }
+.clkchip { flex: 0 0 auto; white-space: nowrap; }
+.clkgroup { display: inline-flex; }
+.clkgroup .clkchip + .clkchip { border-left-width: 0; }
+.clkchip { padding: 5px 10px; border: 1px solid var(--line); font-size: 13px; color: var(--fg2); min-height: 32px; }
+.clkchip.on { color: var(--fg); border-color: var(--accent2); background: color-mix(in srgb, var(--accent) 22%, transparent); }
+.clockbody { flex: 1 1 auto; display: flex; flex-direction: column; gap: 18px; min-height: 0; }
+.desk .clockbody { flex-direction: row; align-items: stretch; }
+.clockmain { flex: 1 1 auto; min-height: min(100%, 520px); display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; min-width: 0; }
+.root:not(.desk) .clockmain { min-height: calc(var(--h) - 110px); }
+.clockdial { width: var(--clk, 320px); height: var(--clk, 320px); flex: 0 0 auto; }
+.clockface { width: 100%; height: 100%; display: block; overflow: visible; }
+.clockface .clkface1 { stop-color: var(--clkface1); }
+.clockface .clkface2 { stop-color: var(--clkface2); }
+.clkhalo { fill: none; stroke: var(--clkhalo); stroke-width: 9; }
+.clkrim { stroke: var(--clkrim); stroke-width: 2.6; }
+.clktick { stroke: var(--accent); stroke-width: 2.2; stroke-linecap: butt; }
+.clktick.q { stroke-width: 3.2; }
+.clkmin { stroke: var(--clkmin); stroke-width: .9; }
+.clknum { fill: var(--clknum); font-size: 17px; font-weight: 350; text-anchor: middle; dominant-baseline: central; }
+.clknum.roman { font-size: 14px; letter-spacing: .5px; font-family: Georgia, "Times New Roman", serif; }
+.clkminnum { fill: var(--fg2); font-size: 9.5px; text-anchor: middle; dominant-baseline: central; }
+.clkwedge { fill: var(--accent); fill-opacity: .3; stroke: var(--accent); stroke-opacity: .7; stroke-width: .8; }
+.clkwedge.hour { fill-opacity: .22; }
+.clkmark { fill: var(--accent2); }
+.clkhand line { stroke: var(--clkhand); stroke-linecap: round; }
+.clkhand.hh line { stroke-width: 5.5; }
+.clkhand.mh line { stroke-width: 2.8; }
+.clkhand.sh line { stroke: var(--accent); stroke-width: 1.2; }
+.clkpin { fill: var(--clkpin); }
+.clockdigital { margin-top: 14px; font-size: clamp(44px, calc(var(--clk, 320px) * .19), 120px); font-weight: 300; line-height: 1; color: var(--clkdigital); font-variant-numeric: tabular-nums; letter-spacing: 1px; }
+.clockdigital small { font-size: .32em; margin-left: .25em; letter-spacing: 0; }
+.clockwords { font-size: clamp(17px, calc(var(--clk, 320px) * .05), 30px); color: var(--fg); margin-top: 8px; min-height: 0; }
+.clockwords:empty { display: none; }
+.clockdate { font-size: clamp(16px, calc(var(--clk, 320px) * .055), 30px); color: var(--clkdigital); margin-top: 8px; }
+.clocknext { font-size: clamp(16px, calc(var(--clk, 320px) * .05), 28px); color: var(--accent2); margin-top: 8px; }
+.clocknext:empty { display: none; }
+.clocknext.done, .cdrow.done .cdleft { animation: clkdone 900ms ease-in-out infinite alternate; }
+@keyframes clkdone { from { opacity: 1; } to { opacity: .35; } }
+.clockside { flex: 0 0 auto; display: flex; flex-direction: column; gap: 10px; }
+.desk .clockside { width: 340px; overflow-y: auto; padding-top: 12px; }
+.cdlist { display: flex; flex-direction: column; gap: 4px; }
+.cdrow { display: grid; grid-template-columns: 1fr auto; grid-template-areas: "name left" "when x"; gap: 0 12px; align-items: baseline; padding: 9px 10px 9px 12px; border-left: 4px solid var(--line); background: color-mix(in srgb, var(--fg) 4%, transparent); cursor: pointer; position: relative; }
+.cdrow.on { border-left-color: var(--accent); }
+.cdname { grid-area: name; font-size: 17px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cdleft { grid-area: left; font-size: 17px; color: var(--accent2); text-align: right; white-space: nowrap; }
+.cdrow small { grid-area: when; font-size: 13px; color: var(--fg2); }
+.cdx { grid-area: x; justify-self: end; color: var(--fg2); font-size: 14px; padding: 4px 2px 0 10px; min-width: 32px; min-height: 28px; }
+.cdnone { max-width: 340px; margin: 0; }
+.cdtimers { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.cdtimers > span { font-size: 13px; color: var(--fg2); margin-right: 4px; text-transform: lowercase; }
+.cdkinds { display: flex; gap: 18px; flex-wrap: wrap; }
+.cddays { display: flex; gap: 6px; margin: 2px 0 8px; }
+.cdwd { position: relative; }
+.cdwd input { position: absolute; opacity: 0; width: 1px; height: 1px; }
+.cdwd span { display: inline-flex; width: 40px; height: 40px; align-items: center; justify-content: center; border: 2px solid var(--line); color: var(--fg2); text-transform: lowercase; cursor: pointer; }
+.cdwd input:checked + span { border-color: var(--accent); color: var(--fg); background: color-mix(in srgb, var(--accent) 25%, transparent); }
+.cdwd input:focus-visible + span { outline: 2px solid var(--fg); outline-offset: 2px; }
+.clkexit { display: none; position: absolute; top: 10px; right: 12px; width: 44px; height: 44px; color: var(--fg2); font-size: 18px; z-index: 2; }
+/* Full screen: the clock and what is counted down, nothing else. */
+.app.clock.full, .app.clock:fullscreen { position: fixed; inset: 0; z-index: 9; padding: 16px; }
+.app.clock.full .clockbar, .app.clock:fullscreen .clockbar, .app.clock.full .cdtimers, .app.clock:fullscreen .cdtimers, .app.clock.full .cdx, .app.clock:fullscreen .cdx { display: none; }
+.app.clock.full .clkexit, .app.clock:fullscreen .clkexit { display: block; }
+@media (orientation: landscape) { .app.clock.full .clockbody, .app.clock:fullscreen .clockbody { flex-direction: row; } .app.clock.full .clockside, .app.clock:fullscreen .clockside { width: min(34vw, 380px); justify-content: center; } }
+@media (prefers-reduced-motion: reduce) { .clocknext.done, .cdrow.done .cdleft { animation: none; } }
 
 /* --- the calendar tab: agenda and month, each calendar its own colour ------ */
 .app.calendar { padding: 0 var(--pad) 24px; overflow-y: auto; }

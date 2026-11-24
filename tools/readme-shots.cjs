@@ -8,9 +8,10 @@ const ONLY = process.env.ONLY ? new Set(process.env.ONLY.split(',')) : null;
 (async () => {
   const browser = await chromium.launch();
   const errors = [];
-  const shot = async (name, { w = 390, h = 760, query = '', act = async () => {} } = {}) => {
+  const shot = async (name, { w = 390, h = 760, query = '', at = null, act = async () => {} } = {}) => {
     if (ONLY && !ONLY.has(name)) return;
     const page = await browser.newPage({ viewport: { width: w, height: h }, deviceScaleFactor: 2 });
+    if (at) await page.clock.install({ time: at });
     page.on('pageerror', (e) => errors.push(`${name}: ${e.message}`));
     await page.goto(BASE + query);
     await page.waitForFunction(() => window.booted);
@@ -73,6 +74,20 @@ const ONLY = process.env.ONLY ? new Set(process.env.ONLY.split(',')) : null;
   };
   await shot('energy', { w: 1280, h: 1440, query: '&plan', act: energy });
   await shot('energy-phone', { query: '&plan', act: energy });
+  // The clock tab at quarter to nine, counting down to the school run.
+  const clock = (prefs) => async (p) => {
+    await p.evaluate((pr) => {
+      localStorage.setItem('mosaic.clock', JSON.stringify(pr));
+      localStorage.setItem('mosaic.countdowns', JSON.stringify([{ name: 'School run', time: '09:00', days: [1, 2, 3, 4, 5] }, { name: 'Christmas', date: '2026-12-24' }]));
+      window.card._goTab('clock');
+    }, prefs);
+    await p.waitForTimeout(500);
+    await p.evaluate(() => [...window.card.shadowRoot.querySelectorAll('.cdrow')].find((r) => /School run/.test(r.textContent)).click());
+    await p.waitForTimeout(700);
+  };
+  const quarterTo = new Date(2026, 10, 24, 8, 45, 12);
+  await shot('clock', { w: 1280, h: 860, at: quarterTo, act: clock({ numbers: 'roman', minutes: true, words: true }) });
+  await shot('clock-phone', { at: quarterTo, query: '&theme=light', act: clock({ numbers: 'arabic', minutes: true, words: true }) });
   await shot('check', { query: '&plan', act: async (p) => {
     await energy(p);
     await p.evaluate(() => window.card.shadowRoot.querySelector('[data-echeck]').click());

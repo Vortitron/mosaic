@@ -83,6 +83,8 @@ export function makeFakeHass(onUpdate, { agent = 'anthropic' } = {}) {
   const fmt = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}:00`;
   add('calendar.family', 'off', { friendly_name: 'Family', message: 'Dentist', start_time: fmt(soon), end_time: fmt(new Date(soon.getTime() + 3600e3)), supported_features: 7 }, null);
   add('calendar.bins', 'off', { friendly_name: 'Bins', supported_features: 0 }, null);
+  // A Home Assistant timer running, for the clock's countdowns.
+  add('timer.pasta', 'active', { friendly_name: 'Pasta', duration: '0:12:00', finishes_at: new Date(Date.now() + 7 * 60e3 + 30e3).toISOString() }, null);
   // A few weeks of a made-up family's events, for the calendar tab.
   const day0 = new Date(); day0.setHours(0, 0, 0, 0);
   const at = (days, h, m = 0) => new Date(day0.getFullYear(), day0.getMonth(), day0.getDate() + days, h, m);

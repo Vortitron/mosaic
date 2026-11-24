@@ -47,8 +47,9 @@ import { gaugeSvg } from './gauge.js';
 import { calendarMethods } from './calendar.js';
 import { refreshCams, shapeOf } from './cams.js';
 import { energyMethods } from './energy.js';
+import { clockMethods } from './clock.js';
 
-const VERSION = '0.7.1-beta.18';
+const VERSION = '0.7.1-beta.19';
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
 const reduced = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
 const ON = ['on', 'open', 'opening', 'unlocked', 'playing', 'home', 'heat', 'cool', 'heat_cool', 'auto', 'cleaning'];
@@ -301,6 +302,9 @@ class MosaicStart extends HTMLElement {
     clearInterval(this._tick);
     clearInterval(this._minute);
     clearInterval(this._cams);
+    clearTimeout(this._clkTimer);
+    if (this._clkLock) this._clkLock.release().catch(() => {});
+    this._clkLock = null;
     window.removeEventListener('keydown', this._onKey);
     window.removeEventListener('popstate', this._onPop);
     if (this._layerWatch) this._layerWatch.disconnect();
@@ -398,6 +402,7 @@ class MosaicStart extends HTMLElement {
         <div class="tabpane house"></div>
         <div class="tabpane energy"></div>
         <div class="tabpane calendar"></div>
+        <div class="tabpane clock"></div>
         <div class="tabpane settings"></div>
         <div class="editbar" role="toolbar" aria-label="customise start">
           <button data-done="save">done</button><button data-done="auto">automatic</button><button data-done="cancel">cancel</button>
@@ -483,6 +488,7 @@ class MosaicStart extends HTMLElement {
     if ((this._plan || planComing) && this._config.show_plan !== false) tabs.push('house');
     if (this._hasEnergy()) tabs.push('energy');
     if (this._config.show_calendar !== false && this._hass && Object.keys(this._hass.states).some((id) => id.startsWith('calendar.'))) tabs.push('calendar');
+    if (this._config.show_clock !== false) tabs.push('clock');
     if (this._canManage()) tabs.push('settings');
     return tabs;
   }
@@ -536,6 +542,8 @@ class MosaicStart extends HTMLElement {
       this._fillEnergy();
     } else if (tab === 'calendar') {
       this._fillCalendar();
+    } else if (tab === 'clock') {
+      this._fillClock();
     } else if (tab === 'settings') {
       if (!root.querySelector('.tabpane.settings .app.settings')) this._buildSettings(pivot || 'attention');
       else if (pivot || again) this._showSettingsPivot(pivot || 'attention');
@@ -648,6 +656,7 @@ class MosaicStart extends HTMLElement {
     const wide = W >= 900;
     root.classList.toggle('desk', wide);
     if (this._tab === 'energy') this._energySize();
+    if (this._tab === 'clock') this._clockSize();
     let cols;
     let unit;
     const gap = 5;
@@ -1903,7 +1912,7 @@ class MosaicStart extends HTMLElement {
   }
 }
 
-Object.assign(MosaicStart.prototype, settingsMethods, artMethods, planEditMethods, calendarMethods, energyMethods);
+Object.assign(MosaicStart.prototype, settingsMethods, artMethods, planEditMethods, calendarMethods, energyMethods, clockMethods);
 
 class MosaicStrategy extends HTMLElement {
   // The same settings for a whole Mosaic dashboard ("Edit dashboard").
