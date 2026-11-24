@@ -49,7 +49,7 @@ import { refreshCams, shapeOf } from './cams.js';
 import { energyMethods } from './energy.js';
 import { clockMethods } from './clock.js';
 
-const VERSION = '0.7.1-beta.19';
+const VERSION = '0.7.1-beta.20';
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
 const reduced = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
 const ON = ['on', 'open', 'opening', 'unlocked', 'playing', 'home', 'heat', 'cool', 'heat_cool', 'auto', 'cleaning'];
@@ -305,6 +305,7 @@ class MosaicStart extends HTMLElement {
     clearTimeout(this._clkTimer);
     if (this._clkLock) this._clkLock.release().catch(() => {});
     this._clkLock = null;
+    if (this._clockForecast) this._clockForecast(false);
     window.removeEventListener('keydown', this._onKey);
     window.removeEventListener('popstate', this._onPop);
     if (this._layerWatch) this._layerWatch.disconnect();

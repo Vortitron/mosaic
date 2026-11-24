@@ -63,7 +63,7 @@ export function makeFakeHass(onUpdate, { agent = 'anthropic' } = {}) {
   add('sensor.grid_power', '1.9', { friendly_name: 'Grid Power', device_class: 'power', unit_of_measurement: 'kW' }, 'comms');
   add('scene.movie', 'scening', { friendly_name: 'Movie Night' }, 'living_room');
   add('vacuum.robot', 'docked', { friendly_name: 'Robot Vacuum' }, null);
-  add('weather.home', 'partlycloudy', { friendly_name: 'Home', temperature: 11.2, temperature_unit: '°C', humidity: 81, wind_speed: 14, wind_speed_unit: 'km/h' }, null);
+  add('weather.home', 'partlycloudy', { friendly_name: 'Home', supported_features: 3, temperature: 11.2, temperature_unit: '°C', humidity: 81, wind_speed: 14, wind_speed_unit: 'km/h' }, null);
   add('person.andy', 'home', { friendly_name: 'Andy', device_trackers: ['device_tracker.pixel_8'], entity_picture: '/tools/harness/andy.svg' }, null);
   // Andy's phone sends the app's Bluetooth beacon; Bermuda follows it room to
   // room and says how far it is from each listener.
@@ -237,6 +237,23 @@ export function makeFakeHass(onUpdate, { agent = 'anthropic' } = {}) {
         if (service === 'toggle' && domain === 'cover') set(id, states[id].state === 'open' ? 'closed' : 'open');
         if (service === 'media_play_pause') set(id, states[id].state === 'playing' ? 'paused' : 'playing');
       }, 100);
+    },
+    // The websocket's subscriptions: an hourly forecast for two days, from
+    // this hour (coldest at three in the morning, warmest at three in the afternoon).
+    connection: {
+      subscribeMessage: async (cb, msg) => {
+        ws.push(msg);
+        if (msg.type === 'weather/subscribe_forecast') {
+          const h0 = new Date();
+          h0.setMinutes(0, 0, 0);
+          const forecast = Array.from({ length: 48 }, (_, i) => {
+            const t = new Date(h0.getTime() + i * 3600e3);
+            return { datetime: t.toISOString(), condition: 'cloudy', temperature: Math.round((5 + 7 * Math.sin(((t.getHours() - 9) / 24) * 2 * Math.PI)) * 10) / 10 };
+          });
+          setTimeout(() => cb({ type: msg.forecast_type, forecast }), 50);
+        }
+        return () => ws.push({ type: 'unsubscribe', of: msg.type });
+      },
     },
     // Home Assistant's calendar API: the events in a range.
     callApi: async (method, path, data) => {

@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  calendarCountdown, handAngles, leftClock, leftText, newCountdown, nextAt, numeral, sleeps, slicePath, timeWords, timerCountdown, wedge, whenText,
+  bandPath, calendarCountdown, dayRing, extremes, forecastSlots, handAngles, median, priceStep, tempStep, leftClock, leftText, newCountdown, nextAt, numeral, sleeps, slicePath, timeWords, timerCountdown, wedge, whenText,
 } from '../src/clock-model.js';
 
 const d = (y, m, day, h = 0, min = 0, s = 0) => new Date(y, m - 1, day, h, min, s);
@@ -118,4 +118,52 @@ test("Home Assistant's timers and the calendars' next events", () => {
   assert.deepEqual(cal({ message: 'Grandma', start_time: '2026-11-27 00:00:00', all_day: true }), { name: 'Grandma', calendar: 'calendar.family', date: '2026-11-27' });
   assert.equal(cal({ message: 'Now', start_time: '2026-11-24 07:00:00' }, 'on'), null, 'already under way');
   assert.equal(cal({ message: 'Far', start_time: '2027-01-24 07:00:00' }), null, 'more than a week off');
+});
+
+test('the day ahead on the face: what is left of today, then tomorrow up to now', () => {
+  const now = d(2026, 11, 24, 8, 55);
+  const hourly = Array.from({ length: 48 }, (_, h) => ({ start: d(2026, 11, 24, h), end: d(2026, 11, 24, h + 1), value: h }));
+  const ring = dayRing(hourly, now);
+  const hours = ring.reduce((t, p) => t + p.sweep / 30, 0);
+  assert.ok(Math.abs(hours - 24) < 1e-9, 'twenty-four hours, no more');
+  const first = ring[0];
+  assert.deepEqual([first.ring, first.value, first.later], ['am', 8, false]);
+  assert.ok(Math.abs(first.from - 267.5) < 1e-9 && Math.abs(first.sweep - 2.5) < 1e-9, 'the hour under way, from now');
+  assert.equal(ring.filter((p) => p.ring === 'pm').length, 12, 'the afternoon ring: today, 12 to 24');
+  assert.ok(ring.filter((p) => p.ring === 'pm').every((p) => !p.later));
+  const morning = ring.filter((p) => p.ring === 'am' && p.later);
+  assert.deepEqual(morning.map((p) => p.value), [24, 25, 26, 27, 28, 29, 30, 31, 32], "tomorrow's morning, up to now");
+  assert.ok(Math.abs(morning.at(-1).sweep - 27.5) < 1e-9, 'cut at now');
+  // An hour that spans midday is split between the rings.
+  const odd = dayRing([{ start: d(2026, 11, 24, 11, 30), end: d(2026, 11, 24, 12, 30), value: 1 }], d(2026, 11, 24, 11, 0));
+  assert.deepEqual(odd.map((p) => [p.ring, p.from, p.sweep]), [['am', 345, 15], ['pm', 0, 15]]);
+});
+
+test('a piece of a ring', () => {
+  assert.equal(bandPath(10, 20, 0, 90), 'M 0 -20 A 20 20 0 0 1 20 0 L 10 0 A 10 10 0 0 0 0 -10 Z');
+});
+
+test('prices against the day, temperatures against freezing', () => {
+  assert.equal(priceStep(1, 1, 2, 4), -1);
+  assert.equal(priceStep(2, 1, 2, 4), 0);
+  assert.equal(priceStep(3, 1, 2, 4), 0.5);
+  assert.equal(priceStep(2, 2, 2, 2), 0, 'one price all day');
+  assert.equal(tempStep(0, '°C'), 0);
+  assert.equal(tempStep(-30, '°C'), -1);
+  assert.equal(tempStep(10, '°C'), 0.5);
+  assert.equal(tempStep(-5, '°C'), -0.5);
+  assert.equal(tempStep(32, '°F'), 0);
+  assert.equal(median([3, 1, 2]), 2);
+  assert.equal(median([4, 1, 2, 3]), 2.5);
+});
+
+test('an hourly forecast as stretches of time, and the lowest and highest ahead', () => {
+  const now = d(2026, 11, 24, 8, 30);
+  const fc = [8, 9, 10, 11].map((h, i) => ({ datetime: d(2026, 11, 24, h).toISOString(), temperature: [-2, -4, 1, 0][i] }));
+  const slots = forecastSlots([...fc, { datetime: 'nonsense', temperature: 3 }]);
+  assert.equal(slots.length, 4);
+  assert.equal(slots[3].end.getTime(), d(2026, 11, 24, 12).getTime(), 'the last hour is an hour');
+  const x = extremes(slots, now);
+  assert.deepEqual([x.lo.value, x.hi.value, x.now.value], [-4, 1, -2]);
+  assert.equal(x.lo.start.getHours(), 9);
 });

@@ -199,3 +199,81 @@ export function calendarCountdown(st, now) {
   if (at <= now || at - now > 7 * 86400e3) return null;
   return { name: a.message, calendar: st.entity_id, date: `${m[1]}-${m[2]}-${m[3]}`, ...(a.all_day || !m[4] ? {} : { time: `${m[4]}:${m[5]}` }) };
 }
+
+// --- overlays: the day ahead round the face --------------------------------
+
+// Where a moment sits on a twelve-hour face, in degrees from twelve.
+export const clockDeg = (d) => ((d.getHours() % 12) + d.getMinutes() / 60 + d.getSeconds() / 3600) * 30;
+
+// The next `hours` of some stretches of time ([{ start, end, value }], as
+// Nord Pool's prices or an hourly forecast come), laid on the face: each
+// piece in the morning ring (by the 1 to 12) or the afternoon one (by the 13
+// to 24), cut at now, at midday and at midnight. So the ring reads as a day
+// ahead: what is left of today, then tomorrow up to now.
+export function dayRing(slots, now, hours = 24) {
+  const t0 = now.getTime();
+  const t1 = t0 + hours * 3600e3;
+  const today = dayStart(now).getTime();
+  const out = [];
+  for (const s of slots) {
+    let a = Math.max(s.start.getTime(), t0);
+    const b = Math.min(s.end.getTime(), t1);
+    while (a < b) {
+      const d = new Date(a);
+      const pm = d.getHours() >= 12;
+      const half = new Date(d.getFullYear(), d.getMonth(), d.getDate(), pm ? 24 : 12).getTime();
+      const e = Math.min(b, half);
+      out.push({ ring: pm ? 'pm' : 'am', from: clockDeg(d), sweep: ((e - a) / 3600e3) * 30, value: s.value, start: s.start, end: s.end, later: dayStart(d).getTime() > today });
+      a = e;
+    }
+  }
+  return out;
+}
+
+// An SVG path for a piece of a ring between radii r0 and r1.
+export function bandPath(r0, r1, from, sweep) {
+  const big = sweep > 180 ? 1 : 0;
+  const [a, b] = polar(r1, from);
+  const [c, e] = polar(r1, from + sweep);
+  const [f, g] = polar(r0, from + sweep);
+  const [h, k] = polar(r0, from);
+  return `M ${a} ${b} A ${r1} ${r1} 0 ${big} 1 ${c} ${e} L ${f} ${g} A ${r0} ${r0} 0 ${big} 0 ${h} ${k} Z`;
+}
+
+// A value as a step from the middle: -1 (cheapest, coldest) to 1. Prices
+// against the day's own (the cheapest, the middle one, the dearest);
+// temperatures against freezing, cold by 10 below, warm by 20 above.
+export function priceStep(v, lo, mid, hi) {
+  if (v === mid) return 0;
+  if (v < mid) return mid > lo ? -Math.min(1, (mid - v) / (mid - lo)) : 0;
+  return hi > mid ? Math.min(1, (v - mid) / (hi - mid)) : 0;
+}
+export function tempStep(t, unit) {
+  const c = /F/i.test(unit || '') ? ((t - 32) * 5) / 9 : t;
+  return c < 0 ? Math.max(-1, c / 10) : Math.min(1, c / 20);
+}
+
+// The middle value of some.
+export function median(values) {
+  const v = [...values].sort((a, b) => a - b);
+  if (!v.length) return null;
+  const m = Math.floor(v.length / 2);
+  return v.length % 2 ? v[m] : (v[m - 1] + v[m]) / 2;
+}
+
+// The hours of a weather entity's hourly forecast as stretches of time.
+export function forecastSlots(forecast, key = 'temperature') {
+  const rows = (forecast || []).map((f) => ({ start: new Date(f.datetime), value: Number(f[key]) })).filter((f) => !isNaN(f.start) && Number.isFinite(f.value));
+  return rows.map((f, i) => ({ ...f, end: new Date(Math.min(rows[i + 1] ? rows[i + 1].start.getTime() : Infinity, f.start.getTime() + 3600e3)) }));
+}
+
+// The lowest and the highest of the day ahead, and when.
+export function extremes(slots, now, hours = 24) {
+  const t1 = now.getTime() + hours * 3600e3;
+  const ahead = slots.filter((s) => s.end > now && s.start.getTime() < t1);
+  if (!ahead.length) return null;
+  const lo = ahead.reduce((m, s) => (s.value < m.value ? s : m));
+  const hi = ahead.reduce((m, s) => (s.value > m.value ? s : m));
+  const at = ahead.find((s) => s.start <= now && s.end > now) || null;
+  return { lo, hi, now: at, values: ahead.map((s) => s.value) };
+}

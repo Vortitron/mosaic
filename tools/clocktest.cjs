@@ -134,6 +134,44 @@ const AT = new Date(2026, 10, 24, 8, 45, 0);
   await page.waitForTimeout(400);
   assert.equal(await ev(() => window.card.shadowRoot.querySelector('.app.clock').classList.contains('full')), false);
 
+  // The day ahead: prices and temperatures round the face, the 13 to 24
+  // inside. Off, there is none of it and no forecast asked for.
+  assert.equal(await ev(() => window.card.shadowRoot.querySelectorAll('.clkband').length), 0);
+  assert.ok(!(await ev(() => window.hass.ws.some((m) => m.type === 'weather/subscribe_forecast'))));
+  assert.equal((await sr('.clknum24')).length, 0);
+  await click('[data-clkopt="prices"]');
+  assert.deepEqual(await sr('.clknum24'), ['24', '13', '14', '15', '16', '17', '18', '19', '20', '21', '22', '23'], 'the first overlay brings the afternoon hours');
+  await click('[data-clkopt="temps"]');
+  await page.waitForTimeout(300);
+  const fcAsk = await ev(() => window.hass.ws.find((m) => m.type === 'weather/subscribe_forecast'));
+  assert.deepEqual(fcAsk, { type: 'weather/subscribe_forecast', entity_id: 'weather.home', forecast_type: 'hourly' });
+  const over = await ev(() => {
+    const r = window.card.shadowRoot;
+    const of = (k) => [...r.querySelectorAll(`.clkband.${k}`)].map((b) => b.querySelector('title').textContent);
+    return { prices: of('prices'), temps: of('temps'), seams: r.querySelectorAll('.clkseam').length, words: [...r.querySelectorAll('.ovline')].map((x) => x.textContent) };
+  });
+  console.log('overlay:', over.prices.length, 'price pieces,', over.temps.length, 'temperature pieces;', over.words.join(' | '));
+  // Prices for today only (tomorrow's not out yet): 08:45 to midnight.
+  assert.equal(over.prices.length, 16);
+  // Times as the home writes them: 08:00, or 8:00am.
+  const T = (h, m = '00') => `0?${h % 12 || 12}:${m}(?:[ap]m)?|${String(h).padStart(2, '0')}:${m}`;
+  const re = (s, ...hs) => new RegExp(s.replace(/%(\d+)/g, (_, i) => `(?:${T(hs[i])})`));
+  assert.match(over.prices[0], re('^%0–%1 · [\\d.]+ SEK/kWh$', 8, 9), 'the hour under way, as it is priced');
+  assert.ok(!over.prices.some((x) => /tomorrow/.test(x)));
+  // The forecast: the rest of this hour, then on to tomorrow at this time.
+  assert.equal(over.temps.length, 25, 'the rest of today (16 hours), then tomorrow up to now (9)');
+  assert.match(over.temps.at(-1), re('^tomorrow %0–%1 · ', 8, 9));
+  assert.equal(over.seams, 2);
+  assert.match(over.words[0], /^price now [\d.]+ SEK\/kWh · cheapest .+ · dearest .+$/);
+  assert.match(over.words[1], re('^11° now · coldest −2° at %0 · warmest 12° at %1$', 3, 15));
+  await page.screenshot({ path: `${OUT}/clock-overlay.png` });
+  // Leaving the tab lets the forecast go.
+  await ev(() => window.card._goTab('start'));
+  await page.clock.runFor(1500);
+  assert.ok(await ev(() => window.hass.ws.some((m) => m.type === 'unsubscribe' && m.of === 'weather/subscribe_forecast')), 'unsubscribed');
+  await ev(() => window.card._goTab('clock'));
+  await page.waitForTimeout(300);
+
   // A phone: the face fills the width, nothing wider than the screen.
   const phone = await open({ width: 390, height: 844 }, '&theme=light');
   await phone.evaluate(() => { localStorage.setItem('mosaic.clock', JSON.stringify({ numbers: 'arabic', minutes: true, words: true })); window.card._clockFace(true); window.card._clockTick(); });

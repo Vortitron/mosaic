@@ -493,6 +493,9 @@ button { font: inherit; color: inherit; background: none; border: 0; padding: 0;
 .clknum { fill: var(--clknum); font-size: 17px; font-weight: 350; text-anchor: middle; dominant-baseline: central; }
 .clknum.roman { font-size: 14px; letter-spacing: .5px; font-family: Georgia, "Times New Roman", serif; }
 .clkminnum { fill: var(--fg2); font-size: 9.5px; text-anchor: middle; dominant-baseline: central; }
+.clknum24 { fill: var(--fg2); font-size: 8.5px; text-anchor: middle; dominant-baseline: central; font-variant-numeric: tabular-nums; }
+.clkband { stroke: var(--clkface1); stroke-width: .6; }
+.clkseam { stroke: var(--clkhand); stroke-width: 1.4; stroke-linecap: round; }
 .clkwedge { fill: var(--accent); fill-opacity: .3; stroke: var(--accent); stroke-opacity: .7; stroke-width: .8; }
 .clkwedge.hour { fill-opacity: .22; }
 .clkmark { fill: var(--accent2); }
@@ -508,6 +511,10 @@ button { font: inherit; color: inherit; background: none; border: 0; padding: 0;
 .clockdate { font-size: clamp(16px, calc(var(--clk, 320px) * .055), 30px); color: var(--clkdigital); margin-top: 8px; }
 .clocknext { font-size: clamp(16px, calc(var(--clk, 320px) * .05), 28px); color: var(--accent2); margin-top: 8px; }
 .clocknext:empty { display: none; }
+.clockover { display: flex; flex-direction: column; gap: 3px; margin-top: 8px; font-size: clamp(13px, calc(var(--clk, 320px) * .036), 18px); color: var(--fg2); }
+.clockover:empty { display: none; }
+.clockover b { color: var(--fg); font-weight: 500; }
+.ovkey { display: inline-block; width: 26px; height: 8px; border-radius: 4px; margin-right: 7px; vertical-align: middle; }
 .clocknext.done, .cdrow.done .cdleft { animation: clkdone 900ms ease-in-out infinite alternate; }
 @keyframes clkdone { from { opacity: 1; } to { opacity: .35; } }
 .clockside { flex: 0 0 auto; display: flex; flex-direction: column; gap: 10px; }

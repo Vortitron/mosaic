@@ -87,7 +87,8 @@ const ONLY = process.env.ONLY ? new Set(process.env.ONLY.split(',')) : null;
   };
   const quarterTo = new Date(2026, 10, 24, 8, 45, 12);
   await shot('clock', { w: 1280, h: 860, at: quarterTo, act: clock({ numbers: 'roman', minutes: true, words: true }) });
-  await shot('clock-phone', { at: quarterTo, query: '&theme=light', act: clock({ numbers: 'arabic', minutes: true, words: true }) });
+  // The phone with the day ahead on: prices and temperatures, 13 to 24.
+  await shot('clock-phone', { at: quarterTo, query: '&theme=light', act: clock({ numbers: 'arabic', hours24: true, prices: true, temps: true }) });
   await shot('check', { query: '&plan', act: async (p) => {
     await energy(p);
     await p.evaluate(() => window.card.shadowRoot.querySelector('[data-echeck]').click());
