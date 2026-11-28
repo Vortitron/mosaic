@@ -13,6 +13,7 @@
 // tile_style: soft        # soft: a little light across each tile; flat: pure Metro
 // brand_icons: true       # integration logos (from brands.home-assistant.io, as Home Assistant's own pages)
 // light_colours: false    # true: a lit lamp's tile takes the lamp's colour
+// back_button: true       # false: on a phone, no round back button (the phone's own back still closes things)
 // wallpaper: /local/me.jpg  # or camera.x / image.x: seen through the tiles, as on Windows Phone 10
 // assistant:              # false hides it
 //   agent_id: conversation.claude   # default: the home's preferred Assist pipeline
@@ -48,8 +49,9 @@ import { calendarMethods } from './calendar.js';
 import { refreshCams, shapeOf } from './cams.js';
 import { energyMethods } from './energy.js';
 import { clockMethods } from './clock.js';
+import { heatPlanMethods } from './heatplan.js';
 
-const VERSION = '0.7.1-beta.20';
+const VERSION = '0.7.1-beta.21';
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
 const reduced = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
 const ON = ['on', 'open', 'opening', 'unlocked', 'playing', 'home', 'heat', 'cool', 'heat_cool', 'auto', 'cleaning'];
@@ -656,6 +658,7 @@ class MosaicStart extends HTMLElement {
     const W = this.clientWidth || window.innerWidth;
     const wide = W >= 900;
     root.classList.toggle('desk', wide);
+    root.classList.toggle('noback', this._config.back_button === false);
     if (this._tab === 'energy') this._energySize();
     if (this._tab === 'clock') this._clockSize();
     let cols;
@@ -1398,7 +1401,11 @@ class MosaicStart extends HTMLElement {
     // Under the setting: what the room reads, or a thermostat's mode; a
     // plain number has neither (its state is the setting itself).
     const small = heat.current !== null ? `${heat.current}${heat.unit} now` : /^(climate|water_heater)\./.test(heat.entity) ? heat.mode : '';
-    return `<div class="bheat${cls ? ` ${cls}` : ''}"><div class="bgauge">${gaugeSvg({ value: heat.current, target: heat.target, min: heat.min, max: heat.max, big: `${heat.target}${heat.unit}`, small, state: heat.heating ? 'heating' : '', label: `${title}: set to ${heat.target}${heat.unit}` })}</div>`
+    // In a room's climate pivot: what the gauge sets, by name, and a tap on
+    // either opens Home Assistant's dialog for it, as a row's does.
+    const app = cls === 'pheat';
+    const name = app ? `<button class="hname" data-more="${esc(heat.entity)}">${esc(nameOf(this._hass, heat.entity))}<small>${esc(heat.entity)}</small></button>` : '';
+    return `${name}<div class="bheat${cls ? ` ${cls}` : ''}"><div class="bgauge"${app ? ` data-more="${esc(heat.entity)}" role="button" tabindex="0" aria-label="${esc(nameOf(this._hass, heat.entity))}: details"` : ''}>${gaugeSvg({ value: heat.current, target: heat.target, min: heat.min, max: heat.max, big: `${heat.target}${heat.unit}`, small, state: heat.heating ? 'heating' : '', label: `${title}: set to ${heat.target}${heat.unit}` })}</div>`
       + `<div class="hsteps"><button ${up} aria-label="warmer">+</button><button ${down} aria-label="cooler">&minus;</button></div></div>`;
   }
 
@@ -1599,7 +1606,9 @@ class MosaicStart extends HTMLElement {
         html = o.kind === 'room' ? this._roomSettingsHtml(o.area) : this._deviceSettingsHtml(o.device);
       } else {
         const ids = (pivots.find(([p]) => p === page.dataset.pivot) || [null, []])[1];
-        html = (page.dataset.pivot === 'climate' && heat ? this._heatHtml(heat, parts.title, 'data-heatstep="up"', 'data-heatstep="down"', 'pheat') : '')
+        // Never redraw under a finger setting the plan.
+        if (this._hpDrag && page.contains(this._hpDrag.el)) continue;
+        html = (page.dataset.pivot === 'climate' && heat ? this._heatHtml(heat, parts.title, 'data-heatstep="up"', 'data-heatstep="down"', 'pheat') + this._hpHtml(heat) : '')
           + ids.map((id) => this._roomRow(id, parts.within)).join('');
       }
       if (page.dataset.html === html) continue;
@@ -1607,6 +1616,7 @@ class MosaicStart extends HTMLElement {
       page.innerHTML = html;
       this._hydrate(page);
     }
+    this._fillHeatPlans(app);
     refreshCams(app, this._hass);
   }
 
@@ -1913,7 +1923,7 @@ class MosaicStart extends HTMLElement {
   }
 }
 
-Object.assign(MosaicStart.prototype, settingsMethods, artMethods, planEditMethods, calendarMethods, energyMethods, clockMethods);
+Object.assign(MosaicStart.prototype, settingsMethods, artMethods, planEditMethods, calendarMethods, energyMethods, clockMethods, heatPlanMethods);
 
 class MosaicStrategy extends HTMLElement {
   // The same settings for a whole Mosaic dashboard ("Edit dashboard").

@@ -147,7 +147,14 @@ button { font: inherit; color: inherit; background: none; border: 0; padding: 0;
 .empty { color: var(--fg2); font-size: 15px; padding: 12px 0; }
 
 /* --- overlays: a room, the assistant, the jump list, a question -------------- */
-.overlay { position: fixed; inset: 0; z-index: 8; background: var(--bg); display: flex; flex-direction: column; animation: enter 260ms cubic-bezier(.1,.9,.2,1); }
+.overlay { position: fixed; inset: 0; z-index: 8; background: var(--bg); display: flex; flex-direction: column; animation: enter 260ms cubic-bezier(.1,.9,.2,1); padding-top: env(safe-area-inset-top); }
+/* On a phone an app's round back button sits in a bar at the bottom, under
+   the thumb and clear of the status bar, as Windows Phone's app bar was.
+   Forms keep theirs at the top, by their own buttons at the bottom. */
+.root:not(.desk):not(.noback) .overlay.app:not(.calnew):not(.clocknew):not(.planedit):not(.pick):not(.flow) { padding-bottom: calc(64px + env(safe-area-inset-bottom)); }
+.root:not(.desk):not(.noback) .overlay.app:not(.calnew):not(.clocknew):not(.planedit):not(.pick):not(.flow)::after { content: ''; position: absolute; left: 0; right: 0; bottom: 0; height: calc(64px + env(safe-area-inset-bottom)); background: var(--chrome); z-index: 2; }
+.root:not(.desk):not(.noback) .overlay.app:not(.calnew):not(.clocknew):not(.planedit):not(.pick):not(.flow) .apptitle .back { position: absolute; left: var(--pad); bottom: calc(8px + env(safe-area-inset-bottom)); width: 48px; height: 48px; font-size: 22px; z-index: 3; }
+.root.noback:not(.desk) .overlay.app:not(.calnew):not(.clocknew):not(.planedit):not(.pick):not(.flow) .apptitle .back { display: none; }
 @keyframes enter { from { transform: translateY(40px) rotateX(-12deg); opacity: 0; } to { transform: none; opacity: 1; } }
 .apptitle { flex: 0 0 auto; display: flex; align-items: center; gap: 14px; padding: 14px var(--pad) 0; font-size: 13px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; }
 .pivots { flex: 0 0 auto; display: flex; gap: 22px; padding: 6px var(--pad) 8px; overflow-x: auto; scrollbar-width: none; white-space: nowrap; }
@@ -346,6 +353,30 @@ button { font: inherit; color: inherit; background: none; border: 0; padding: 0;
 .tile.large .bgauge .gauge { max-height: calc(var(--unit) * 2.4); }
 /* At the top of a room's climate pivot: large, in the accent. */
 .bheat.pheat { max-width: 560px; height: 200px; margin: 4px 0 12px; color: var(--accent2); }
+.hname { display: block; text-align: left; margin: 6px 0 0; font-size: 17px; color: var(--fg); }
+.hname small { display: block; font-size: 12px; color: var(--fg2); }
+.bheat.pheat .bgauge { cursor: pointer; -webkit-tap-highlight-color: transparent; }
+/* The day's plan: a bar per hour, as long as the warmth wanted then, over
+   the hour's price. The labels scroll the page; the bars take the finger. */
+.hplan { max-width: 560px; margin: 4px 0 18px; }
+.hplanhead { display: flex; align-items: center; gap: 6px; margin: 8px 0 6px; }
+.hplanhead > span:first-child { font-size: 22px; font-weight: 300; }
+.hplanhead .housefill { flex: 1 1 auto; }
+.hplan code { font-size: 12px; }
+.hscale { display: grid; grid-template-columns: 44px var(--auto, 14%) 1fr auto; font-size: 11px; color: var(--fg2); margin-bottom: 2px; }
+.hscale span:first-child { grid-column: 2; }
+.hscale span:last-child { text-align: right; }
+.hbars { display: flex; flex-direction: column; gap: 2px; user-select: none; -webkit-user-select: none; }
+.hrow { display: flex; align-items: stretch; height: 28px; }
+.hlab { flex: 0 0 44px; font-size: 12px; color: var(--fg2); display: flex; align-items: center; touch-action: pan-y; white-space: nowrap; }
+.hrow.now .hlab { color: var(--fg); font-weight: 600; }
+.hbar { position: relative; flex: 1 1 auto; touch-action: none; cursor: ew-resize; background: color-mix(in srgb, var(--shade, transparent) 30%, transparent); }
+.hbar::before { content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: var(--auto, 14%); border-right: 1px dashed var(--line); }
+.hbar i { position: absolute; left: 0; top: 8px; bottom: 8px; background: var(--accent); transition: width 80ms linear; }
+.hrow.auto .hbar i { background: transparent; }
+.hbar b { position: absolute; right: 6px; top: 50%; transform: translateY(-50%); font-size: 12px; font-weight: 500; color: var(--fg); }
+.hrow.auto .hbar b { color: var(--fg2); font-weight: 400; }
+.hplansum small { color: var(--fg2); }
 .bheat.pheat { gap: 18px; }
 .bheat.pheat .bgauge { flex: 0 0 230px; }
 .bheat.pheat .gauge { max-height: 200px; }

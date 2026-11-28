@@ -21,9 +21,9 @@ const TIMERS_KEY = 'mosaic.timers';
 const TIMER_MINUTES = [1, 5, 10, 15, 30, 60];
 const DAY_LETTERS = ['m', 't', 'w', 't', 'f', 's', 's'];
 // The overlays' colours: from the middle (grey) to cheap or dear, cold or warm.
-const MID = '#8b9099';
-const CHEAP = '#1fa37a';
-const DEAR = '#e07b12';
+export const MID = '#8b9099';
+export const CHEAP = '#1fa37a';
+export const DEAR = '#e07b12';
 const COLD = '#3b82f6';
 const WARM = '#e5484d';
 const mix = (a, b, f) => {
@@ -32,7 +32,7 @@ const mix = (a, b, f) => {
 };
 // Coloured from the first step away from the middle, so a mild day or an
 // ordinary price is not grey.
-const stepColour = (step, lo, hi) => (step < 0 ? mix(MID, lo, Math.sqrt(-step)) : mix(MID, hi, Math.sqrt(step)));
+export const stepColour = (step, lo, hi) => (step < 0 ? mix(MID, lo, Math.sqrt(-step)) : mix(MID, hi, Math.sqrt(step)));
 
 const readJson = (key, fallback) => {
   try {

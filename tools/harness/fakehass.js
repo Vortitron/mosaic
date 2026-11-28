@@ -236,6 +236,7 @@ export function makeFakeHass(onUpdate, { agent = 'anthropic' } = {}) {
         if (service === 'toggle' && ['light', 'switch'].includes(domain)) flip(id);
         if (service === 'toggle' && domain === 'cover') set(id, states[id].state === 'open' ? 'closed' : 'open');
         if (service === 'media_play_pause') set(id, states[id].state === 'playing' ? 'paused' : 'playing');
+        if (domain === 'input_text' && service === 'set_value' && states[id]) set(id, String(data.value));
       }, 100);
     },
     // The websocket's subscriptions: an hourly forecast for two days, from
@@ -325,6 +326,19 @@ export function makeFakeHass(onUpdate, { agent = 'anthropic' } = {}) {
         hass = { ...hass, devices: { ...devices } };
         rebuild();
         return devices[msg.device_id];
+      }
+      // A helper made from the page: a text helper, its id from its name.
+      if (msg.type === 'input_text/create') {
+        const id = msg.name.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '');
+        states[`input_text.${id}`] = { entity_id: `input_text.${id}`, state: '', attributes: { friendly_name: msg.name, min: msg.min, max: msg.max, mode: msg.mode }, last_changed: new Date().toISOString(), last_updated: new Date().toISOString() };
+        rebuild();
+        return { id, name: msg.name, max: msg.max };
+      }
+      if (msg.type === 'config/entity_registry/update' && msg.new_entity_id) {
+        states[msg.new_entity_id] = { ...states[msg.entity_id], entity_id: msg.new_entity_id };
+        delete states[msg.entity_id];
+        rebuild();
+        return { entity_entry: { entity_id: msg.new_entity_id } };
       }
       if (msg.type === 'config/entity_registry/update') {
         if (!entities[msg.entity_id]) throw { code: 'not_found', message: 'Entity not found' };
