@@ -70,9 +70,14 @@ const BASE = process.env.URL || 'http://127.0.0.1:18766/tools/harness/';
   assert.match(saved, /^2026-11-28T09:00\/60\/(\d+(\.5)?,){8}/);
   const vals = saved.split('/')[2].split(',');
   assert.ok(vals.slice(0, 8).every((v) => v === vals[0]), 'the hours the finger crossed all alike');
-  assert.ok(Number(vals[8]) < Number(vals[0]) && Number(vals[8]) > 21, 'the next hour ramps down to what it is set to now (21°)');
-  assert.equal(vals.length, 11, 'three hours of ramp');
-  assert.match(await q('.hplansum'), new RegExp(`^${vals[0]}° 09:00–17:00, `));
+  // The hours after ramp down on a shoulder to what it is set to now (21°):
+  // most of the way at first, gone by the sixth.
+  const ramp = vals.slice(8).map(Number);
+  console.log('ramp:', ramp.join(' '));
+  assert.ok(vals[0] - ramp[0] <= 0.5, 'the next hour nearly as warm');
+  assert.ok(ramp.every((x, k) => x > 21 && (k === 0 || x <= ramp[k - 1])), 'down step by step');
+  assert.equal(ramp.length, 5, 'five hours of ramp (the sixth rounds to 21°: no plan)');
+  assert.match(await q(".hplansum"), new RegExp(`^${vals[0]}° 09:00–1[78]:00, `));
   // Shaded by price where there is one (today), not tomorrow.
   const shades = await ev(() => [...window.card.shadowRoot.querySelectorAll('.hbar')].map((b) => b.style.getPropertyValue('--shade')));
   assert.ok(shades[0].startsWith('rgb') && shades[14].startsWith('rgb') && shades[15] === 'transparent');

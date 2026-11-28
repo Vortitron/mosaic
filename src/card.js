@@ -51,7 +51,7 @@ import { energyMethods } from './energy.js';
 import { clockMethods } from './clock.js';
 import { heatPlanMethods } from './heatplan.js';
 
-const VERSION = '0.7.1-beta.21';
+const VERSION = '0.7.1-beta.22';
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
 const reduced = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
 const ON = ['on', 'open', 'opening', 'unlocked', 'playing', 'home', 'heat', 'cool', 'heat_cool', 'auto', 'cleaning'];

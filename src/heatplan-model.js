@@ -74,10 +74,14 @@ export function fracOf(value, lo, hi) {
 }
 
 // Linked, as a graphic equaliser's sliders can be: moving one bar drags its
-// neighbours part of the way, halving with each step away, so a change ramps
-// up and down rather than jumping. Bars the finger has crossed are left as
-// set; an unplanned neighbour ramps from `base` (what it is set to now).
-export function linkRamp(values, i, v, touched, base, reach = 3) {
+// neighbours along a rounded shoulder, most of the way next to it and less
+// with each hour out to `reach` (a cosine curve: 95%, 81%, 61%, 39%, 19%,
+// 5% over six hours), so a change ramps up and down rather than jumping.
+// Bars the finger has crossed are left as set; an unplanned neighbour ramps
+// from `base` (what it is set to now).
+export const LINK_REACH = 6;
+export const linkWeight = (d, reach = LINK_REACH) => (d > reach ? 0 : Math.cos((Math.PI * d) / (2 * (reach + 1))) ** 2);
+export function linkRamp(values, i, v, touched, base, reach = LINK_REACH) {
   const out = [...values];
   out[i] = v;
   if (v === null) return out;
@@ -87,8 +91,7 @@ export function linkRamp(values, i, v, touched, base, reach = 3) {
       if (j < 0 || j >= out.length) break;
       if (touched.has(j)) break;
       const from = values[j] === null ? base : values[j];
-      const pull = (v - from) * 0.5 ** d;
-      const next = Math.round((from + pull) * 2) / 2;
+      const next = Math.round((from + (v - from) * linkWeight(d, reach)) * 2) / 2;
       out[j] = next === base && values[j] === null ? null : next;
     }
   }

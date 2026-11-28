@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  fracOf, hourPrices, linkRamp, parsePlan, planAt, planEntityFor, planRange, planRows, planSummary, planText, valueAt,
+  fracOf, hourPrices, linkRamp, linkWeight, parsePlan, planAt, planEntityFor, planRange, planRows, planSummary, planText, valueAt,
 } from '../src/heatplan-model.js';
 
 const d = (y, m, day, h = 0, min = 0) => new Date(y, m - 1, day, h, min);
@@ -48,15 +48,17 @@ test('a finger along a bar: the first part is no plan', () => {
   assert.deepEqual(planRange(40, 75, '°C'), [40, 75], 'a hot water tank its own');
 });
 
-test('linked: neighbours follow part of the way, halving each step', () => {
-  const vals = [16, 16, 16, 16, 16, 16, 16];
-  assert.deepEqual(linkRamp(vals, 3, 24, new Set([3]), 16), [17, 18, 20, 24, 20, 18, 17]);
+test('linked: neighbours follow on a rounded shoulder, most of the way at first', () => {
+  assert.deepEqual([1, 2, 3, 4, 5, 6, 7].map((d) => Math.round(linkWeight(d) * 100)), [95, 81, 61, 39, 19, 5, 0]);
+  const vals = Array(13).fill(16);
+  assert.deepEqual(linkRamp(vals, 6, 22, new Set([6]), 16), [16.5, 17, 18.5, 19.5, 21, 21.5, 22, 21.5, 21, 19.5, 18.5, 17, 16.5]);
   // Bars the finger crossed keep what it set.
-  assert.deepEqual(linkRamp([16, 22, 16, 16], 2, 22, new Set([1, 2]), 16), [16, 22, 22, 19]);
+  assert.deepEqual(linkRamp([16, 22, 16, 16], 2, 22, new Set([1, 2]), 16), [16, 22, 22, 21.5]);
   // Unplanned neighbours ramp from what it is set to now (in half degrees);
   // ones that come out at that stay unplanned.
-  assert.deepEqual(linkRamp([null, null, null, null, null], 2, 20, new Set([2]), 17), [18, 18.5, 20, 18.5, 18]);
+  assert.deepEqual(linkRamp(Array(9).fill(null), 0, 23, new Set([0]), 17), [23, 22.5, 22, 20.5, 19.5, 18, 17.5, null, null]);
   assert.deepEqual(linkRamp([null, null, null, null, null], 2, 17, new Set([2]), 17), [null, null, 17, null, null]);
+  assert.deepEqual(linkRamp([16, 16, 16], 1, 22, new Set([1]), 16, 1), [19, 22, 19], 'a narrower reach: halfway');
 });
 
 test('the price in each hour, from quarter-hours or hours', () => {
